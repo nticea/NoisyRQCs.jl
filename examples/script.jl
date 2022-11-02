@@ -7,16 +7,10 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-L = 15 
-T = 10
+L = 11
+T = 5
 
 ## CODE ## 
-
-# Initialize the wavefunction to be all zeros 
-ψ0 = initialize_wavefunction(L=L)
-
-# Apply the circuit 
-ρ = apply_circuit(ψ0, T)
 
 """
 Checks to do:
@@ -30,8 +24,17 @@ Checks to do:
 
 TODO
     0.5 Finish reading the papers!! 
-    MAKE U DAGGER !!! 
     1. Implement negativity 
     2. Implement MPO entanglement entropy
 
 """
+
+# Initialize the wavefunction to be all zeros 
+ψ0 = initialize_wavefunction(L=L)
+
+# Apply the circuit 
+ρ = apply_circuit(ψ0, T, apply_noise=true)
+
+# Perform a measurement 
+samples = measure_computational_basis(ρ)
+@show samples 
