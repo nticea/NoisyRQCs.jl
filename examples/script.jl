@@ -8,7 +8,7 @@ ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
 L = 11
-T = 5
+T = 100
 
 ## CODE ## 
 
@@ -33,8 +33,12 @@ TODO
 ψ0 = initialize_wavefunction(L=L)
 
 # Apply the circuit 
-ρ = apply_circuit(ψ0, T, apply_noise=true)
+ρ, entropy = apply_circuit(ψ0, T, ε=0, measure_entropy=true)
 
-# Perform a measurement 
-samples = measure_computational_basis(ρ)
-@show samples 
+# Porter-Thomas check 
+porter_thomas_fit(ρ)
+
+# Entanglement entropy 
+plot(1:T, entropy)
+title!("Entanglement Entropy")
+xlabel!("T")

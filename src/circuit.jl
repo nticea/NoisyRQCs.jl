@@ -1,6 +1,7 @@
 using ITensors
 using Distributions
 using LinearAlgebra
+using StatsBase 
 include("../src/utilities.jl")
 
 """
@@ -33,8 +34,9 @@ function make_unitary_gate(ind1, ind2, random_type::String)
 
     if random_type=="Haar"
         randU_elems = gen_Haar(D*D)
-        U = ITensor(randU_elems, ind1, ind2, prime(ind1, 2), prime(ind2, 2))   
+        U = ITensor(randU_elems, ind1, ind2, prime(ind1, 2), prime(ind2, 2))
         Udag = prime(dag(U))
+
         return U * Udag      
     else
         @assert false "Only Haar distribution implemented thus far"
@@ -168,30 +170,101 @@ end
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, apply_noise=true)::MPO
-    ρ = density_matrix(copy(ψ0)) # make the density matrix 
+function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, measure_entropy=false)
+    ρ = density_matrix(copy(ψ0)) # Make the density matrix 
     sites = siteinds(ψ0)
+
+    if measure_entropy
+        entropy = []
+    end
     
+    # Iterate over all time steps 
     for t in 1:T
         print(t,"-")
-        # At each time point make a random layer of gates (alternate odd and even) 
+        # At each time point, make a layer of random unitary gates 
         unitary_gates = unitary_layer(sites, t, random_type)
 
-        # Now apply the gate to the wavefunction 
+        # Now apply the gates to the wavefunction (alternate odd and even) 
         for u in unitary_gates
             ρ = apply_twosite_gate(ρ, u)
         end
 
-        if apply_noise
-            # Make the noise layer
-            noise_gates = noise_layer(sites, ε)
+        # Make the noise gates for this layer 
+        noise_gates = noise_layer(sites, ε)
 
-            # Now apply the noise layer 
-            for n in noise_gates
-                ρ = apply_onesite_gate(ρ, n)
-            end
+        # Now apply the noise layer 
+        for n in noise_gates
+            ρ = apply_onesite_gate(ρ, n)
         end
+
+        if measure_entropy
+            # make a super MPS out of the MPO 
+            Ψ = combine_indices(ρ)
+            # Calculate the entanglement entropy for this MPS 
+            SvN = entanglement_entropy(Ψ)
+            push!(entropy, SvN)
+        end
+    end
+
+    @show tr(ρ)
+
+    if measure_entropy
+        return ρ, entropy
     end
 
     return ρ
 end
+
+# """
+# Apply a random circuit to the wavefunction ψ0
+# """
+# function apply_circuit_benchmark(ψ0::MPS, T::Int; random_type="Haar", ε=0, apply_noise=false)::MPO
+#     ρ = density_matrix(copy(ψ0)) # Make the density matrix 
+#     sites = siteinds(ψ0)
+
+#     ### Benchmarking ###
+#     ρ0 = copy(ρ) 
+#     all_gates = []
+
+#     for t in 1:T
+#         print(t,"-")
+#         # At each time point make a random layer of gates (alternate odd and even) 
+#         unitary_gates = unitary_layer(sites, t, random_type)
+
+#         # Now apply the gate to the wavefunction 
+#         for u in unitary_gates
+#             ρ = apply_twosite_gate(ρ, u)
+#             @show inds(u)
+
+#             # do it again to make sure that we are getting the correct thing back 
+#             # ρ = apply_twosite_gate(ρ, dag(u))
+
+#             # @show array(ρ[1]*ρ[2])
+#             # @show array(ρ0[1]*ρ0[2])
+
+#             # @assert 1==0
+
+#             push!(all_gates, u)
+#         end
+#     end
+
+#     @show tr(ρ)
+
+#     # Now do everything in reverse 
+#     for g in reverse(all_gates)
+#         @show inds(dag(g))
+#         ρ = apply_twosite_gate(ρ, dag(g))
+#     end
+
+#     # @show ρ
+#     # @show ρ0
+#     # for i in 1:length(ρ)
+#     #     @show round.(array(ρ[i]),digits=3)
+#     #     @show round.(array(ρ0[i]),digits=3)
+#     # end
+
+#     @show measure_computational_basis(ρ0, nsamples=10)
+#     @show measure_computational_basis(ρ, nsamples=10)
+
+#     return ρ
+# end
