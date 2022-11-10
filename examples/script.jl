@@ -7,7 +7,7 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-L = 11
+L = 5
 T = 100
 
 ## CODE ## 
@@ -39,6 +39,4 @@ TODO
 porter_thomas_fit(ρ)
 
 # Entanglement entropy 
-plot(1:T, entropy)
-title!("Entanglement Entropy")
-xlabel!("T")
+plot_entropy(ρ, entropy)

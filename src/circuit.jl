@@ -9,12 +9,6 @@ This function generates a Haar random unitary of dimension DxD
 see: https://colab.research.google.com/drive/1JRvzfG2SzNel4u80D2rnzO8xG5kDQ9aY?authuser=1#scrollTo=yyFzzZdE7s1u
 """
 function gen_Haar(N)
-    # X = rand(Normal(μ, σ),(D,D))
-    # Y = rand(Normal(μ, σ),(D,D))
-    # Z = (X + 1im*Y) / sqrt(2)
-    # F = qr(Z)
-    # R = Diagonal(diag(F.R)/abs.(diag(F.R)))
-    # return F.Q * R
     x = (rand(N,N) + rand(N,N)*im) / sqrt(2)
     f = qr(x)
     diagR = sign.(real(diag(f.R)))

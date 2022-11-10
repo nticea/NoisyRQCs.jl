@@ -12,6 +12,15 @@ function initialize_wavefunction(;L::Int)
     productMPS(sites,state_arr) 
 end
 
+function plot_entropy(ρ::MPO, S::Vector{Any})
+    plot(1:length(S), S)
+    L = floor(Int, length(ρ)/2)
+    d = ITensors.dim(siteind(ρ,1))^2
+    hline!([L*log(d)])
+    title!("Entanglement Entropy")
+    xlabel!("T")
+end
+
 function entanglement_entropy(ψ::MPS; b=nothing)
     if isnothing(b)
         b = ceil(Int, length(ψ)/2)
@@ -32,25 +41,42 @@ function porter_thomas_fit(ρ::MPO; do_fit=true)
     
     # histogram it 
     h = StatsBase.fit(Histogram, bitdist .* length(bitdist), nbins=50)
-    h = StatsBase.normalize(h, mode=:density)
+    #h = StatsBase.normalize(h, mode=:density)
     weights, edges = h.weights, h.edges[1]
+    edges = edges[1:end-1]
+    weights = weights ./ sum(edges .* weights)
+    
+    # some cleanup 
+    logweights = log.(weights)
+    clean_idx = findall(x -> x!= Inf && x != -Inf, logweights)
+    logweights = logweights[clean_idx]
+    edges = edges[clean_idx]
 
     # plot it out 
-    scatter(edges, log.(weights))
+    scatter(edges, logweights)
     title!("P(Dp)")
 
-    # fit to exponential 
-    a,b,fit_y,_ = exponential_fit(edges, weights)
+    # fit the log.(weights) to a line  
+    a,b,fit_y = line_fit(edges, logweights)
 
     # plot it out 
     plot!(edges, fit_y, label="exponential fit, k=$b")
 end
 
+function line_fit(x, y)
+    a,b = linear_fit(x, y)
+    fit_y = a .+ b .* x
+    return a,b,fit_y
+end
+
+function square_residual(y, ỹ)
+    sum((ỹ .- y).^2)
+end
+
 function exponential_fit(x, y)
     a,b = exp_fit(x, y)
     fit_y = a.*exp.(b.*x)
-    err = square_residual(fit_y, y)
-    return a,b,fit_y,err
+    return a,b,fit_y
 end
 
 function combine_indices(ρ::MPO)
@@ -100,12 +126,6 @@ function bitstring_distribution(ρ::MPO)
         end
         bitdist[b+1] = probs
     end
-
-    @show sum(bitdist)
-
-    # Plot out D*bitdist 
-    h = fit(Histogram, bitdist .* D)
-    plot(h)
 
     return bitdist 
 end
