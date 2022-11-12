@@ -3,7 +3,13 @@ using Plots
 using StatsBase 
 using CurveFit
 
-
+struct Results
+    L::Int
+    T::Int 
+    ρ::MPO
+    bitdist::Vector{Float64}
+    entropy::Vector{Float64}
+end
 
 function initialize_wavefunction(;L::Int)
     @assert isodd(L) "L must be odd"
@@ -12,11 +18,15 @@ function initialize_wavefunction(;L::Int)
     productMPS(sites,state_arr) 
 end
 
-function plot_entropy(ρ::MPO, S::Vector{Any})
+function plot_entropy(S::Vector{Float64})
     plot(1:length(S), S)
-    L = floor(Int, length(ρ)/2)
-    d = ITensors.dim(siteind(ρ,1))^2
-    hline!([L*log(d)])
+    title!("Second Renyi Entropy at L/2")
+    xlabel!("T")
+end
+
+function plot_entropy(r::Results)
+    S = r.entropy
+    plot(1:length(S), S)
     title!("Entanglement Entropy")
     xlabel!("T")
 end
@@ -35,12 +45,78 @@ function entanglement_entropy(ψ::MPS; b=nothing)
     return SvN 
 end
 
-function porter_thomas_fit(ρ::MPO; do_fit=true)
+function second_Renyi_entropy(ρ)
+    return -log(tr(apply(ρ, ρ)))
+end
+
+findnearest(A,x) = argmin(abs.(A .- x))
+
+"""
+physical_indices(ψ::MPS, idxlist::Vector{Int}, tag::String)
+    Given an INTEGER list of desired indices, 
+    return a list of the corresponding PHYSICAL Index (struct) of the MPS  
+"""
+function physical_indices(ψ::Union{MPS,MPO}, sitelist::Vector{Int}; tag::String="Site")
+    [getfirst(x -> hastags(x, tag), inds(ψ[s])) for s in sitelist]
+end
+
+function physical_indices(ψ::Union{MPS,MPO}; tag::String="Site")
+    [getfirst(x -> hastags(x, tag), inds(ψs)) for ψs in ψ]
+end
+
+function physical_indices(ψ::ITensor; tag::String="Site")
+    getfirst(x -> hastags(x, tag), inds(ψ))
+end
+
+function partial_trace(ρ::MPO, indslist::Vector{Int})
+    sort!(indslist)
+    ρ̃ = copy(ρ)
+    sites = physical_indices(ρ)[indslist]
+    # Go through all the traced-out sites and tie them together 
+    for (i,s) in zip(indslist, sites)
+        ρ̃[i] *= delta(s, prime(s))
+    end
+
+    to_keep = setdiff(collect(1:length(ρ)), indslist)
+    sites_to_keep = physical_indices(ρ)[to_keep]
+    blocks = [to_keep[findnearest(to_keep, k)] for k in indslist]
+
+    orthogonalize!(ρ̃, minimum(to_keep))
+
+    for i in 1:length(indslist)
+        # Multiply the link indices into the nearest site that we keep 
+        nearest_site = blocks[i]
+        ρ̃[nearest_site] *= ρ̃[indslist[i]]            
+    end
+    ρ_new = randomMPO(sites_to_keep)
+    orthogonalize!(ρ_new, 1)
+    ρ_new.data = ρ̃[to_keep]
+
+    return ρ_new
+end
+
+function get_D(ρ::MPO)
+    L = length(ρ)
+    d = ITensors.dim(siteind(ρ,1))
+    D = d^L
+    return D 
+end
+
+function porter_thomas_fit(r::Results; do_fit=true)
+    D = get_D(r)
+    _porter_thomas_fit(r.bitdist, r.D, do_fit)
+end
+
+function porter_thomas_fit(ρ::MPO; do_fit=true, plot=true)
     # get the probability distribution over bitstrings
     bitdist = bitstring_distribution(ρ)
-    
+    D = get_D(r)
+    _porter_thomas_fit(r.bitdist, D, do_fit)
+end
+
+function _porter_thomas_fit(bitdist, D::Int, do_fit)
     # histogram it 
-    h = StatsBase.fit(Histogram, bitdist .* length(bitdist), nbins=50)
+    h = StatsBase.fit(Histogram, bitdist .* D, nbins=50)
     #h = StatsBase.normalize(h, mode=:density)
     weights, edges = h.weights, h.edges[1]
     edges = edges[1:end-1]
@@ -56,11 +132,14 @@ function porter_thomas_fit(ρ::MPO; do_fit=true)
     scatter(edges, logweights)
     title!("P(Dp)")
 
-    # fit the log.(weights) to a line  
-    a,b,fit_y = line_fit(edges, logweights)
+    if do_fit
+        # fit the log.(weights) to a line  
+        a,b,fit_y = line_fit(edges, logweights)
 
-    # plot it out 
-    plot!(edges, fit_y, label="exponential fit, k=$b")
+        # plot it out 
+        plot!(edges, fit_y, label="exponential fit, k=$b")
+
+    end
 end
 
 function line_fit(x, y)
@@ -172,3 +251,39 @@ function probability_distribution(m::MPS)
     end
     return probs
   end
+
+  using ITensors.HDF5
+
+function save_structs(struc, path::String)
+    function Name(arg)
+        string(arg)
+    end
+    fnames = fieldnames(typeof(struc))
+    for fn in fnames 
+        n = Name(fn)
+        d = getfield(struc, fn)
+
+        # If the file already exists, then we either append to it or overwrite 
+        if isfile(path)
+            h5open(path, "r+") do file
+                if haskey(file, n) #if key already exists, we want to rewrite 
+                    delete_object(file, n)
+                    write(file, n, d)
+                else
+                    write(file, n, d) 
+                end
+            end
+        else # If the file does not exist, create it 
+            h5open(path, "w") do file
+                write(file, n, d) 
+            end
+        end
+    end
+end
+
+function load_results(loadpath::String)
+    f = h5open(loadpath,"r")
+    ρ = read(f, "ρ", MPO)
+    d = read(f)
+    return Results(d["L"], d["T"], ρ, d["bitdist"], d["entropy"])
+end

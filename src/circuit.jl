@@ -15,7 +15,6 @@ function gen_Haar(N)
     diagR[diagR.==0] .= 1
     diagRm = diagm(diagR)
     u = f.Q * diagRm
-    
     return u
 end
 
@@ -169,7 +168,7 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, measure_en
     sites = siteinds(ψ0)
 
     if measure_entropy
-        entropy = []
+        entropy = Float64[]
     end
     
     # Iterate over all time steps 
@@ -192,11 +191,11 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, measure_en
         end
 
         if measure_entropy
-            # make a super MPS out of the MPO 
-            Ψ = combine_indices(ρ)
-            # Calculate the entanglement entropy for this MPS 
-            SvN = entanglement_entropy(Ψ)
-            push!(entropy, SvN)
+            # Calculate the second Renyi entropy 
+            L̃ = floor(Int, L/2)
+            ρ_A = partial_trace(ρ, collect(1:L̃))
+            SR2 = second_Renyi_entropy(ρ_A)
+            push!(entropy, real(SR2))
         end
     end
 
@@ -208,57 +207,3 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, measure_en
 
     return ρ
 end
-
-# """
-# Apply a random circuit to the wavefunction ψ0
-# """
-# function apply_circuit_benchmark(ψ0::MPS, T::Int; random_type="Haar", ε=0, apply_noise=false)::MPO
-#     ρ = density_matrix(copy(ψ0)) # Make the density matrix 
-#     sites = siteinds(ψ0)
-
-#     ### Benchmarking ###
-#     ρ0 = copy(ρ) 
-#     all_gates = []
-
-#     for t in 1:T
-#         print(t,"-")
-#         # At each time point make a random layer of gates (alternate odd and even) 
-#         unitary_gates = unitary_layer(sites, t, random_type)
-
-#         # Now apply the gate to the wavefunction 
-#         for u in unitary_gates
-#             ρ = apply_twosite_gate(ρ, u)
-#             @show inds(u)
-
-#             # do it again to make sure that we are getting the correct thing back 
-#             # ρ = apply_twosite_gate(ρ, dag(u))
-
-#             # @show array(ρ[1]*ρ[2])
-#             # @show array(ρ0[1]*ρ0[2])
-
-#             # @assert 1==0
-
-#             push!(all_gates, u)
-#         end
-#     end
-
-#     @show tr(ρ)
-
-#     # Now do everything in reverse 
-#     for g in reverse(all_gates)
-#         @show inds(dag(g))
-#         ρ = apply_twosite_gate(ρ, dag(g))
-#     end
-
-#     # @show ρ
-#     # @show ρ0
-#     # for i in 1:length(ρ)
-#     #     @show round.(array(ρ[i]),digits=3)
-#     #     @show round.(array(ρ0[i]),digits=3)
-#     # end
-
-#     @show measure_computational_basis(ρ0, nsamples=10)
-#     @show measure_computational_basis(ρ, nsamples=10)
-
-#     return ρ
-# end

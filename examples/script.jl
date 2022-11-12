@@ -7,36 +7,45 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-L = 5
+L = 9
 T = 100
+ε = 0
+nsamples = 50
 
 ## CODE ## 
 
 """
 Checks to do:
-    1. Output of the circuit when we are not applying any noise. Do we get the expected Haar statistics
-    (Porter-Thomas distribution) 
     2. Run forward and then backwards, make sure i am getting out the same initial state
-    3. Look at the growth of entanglement entropy over time 
     4. Compute the second Renyi entropy 
-    2. Check -- are we applying two-qubit noise, or just single-qubit noise? 
-        Single site noise is okay 
 
 TODO
     0.5 Finish reading the papers!! 
     1. Implement negativity 
     2. Implement MPO entanglement entropy
-
 """
+bitdist = zeros(nsamples, 4^L)
+entropy = zeros(nsamples, T)
+for n in 1:nsamples
+    print(n,"-")
+    # Initialize the wavefunction to be all zeros 
+    ψ0 = initialize_wavefunction(L=L)
 
-# Initialize the wavefunction to be all zeros 
-ψ0 = initialize_wavefunction(L=L)
+    # Apply the circuit 
+    ρ, S = apply_circuit(ψ0, T, ε=ε, measure_entropy=true)
 
-# Apply the circuit 
-ρ, entropy = apply_circuit(ψ0, T, ε=0, measure_entropy=true)
+    # get the distribution over bitstrings
+    bdist = bitstring_distribution(ρ)
 
-# Porter-Thomas check 
-porter_thomas_fit(ρ)
+    bitdist[n,:] = bdist
+    entropy[n,:] = S
+end
 
-# Entanglement entropy 
-plot_entropy(ρ, entropy)
+_porter_thomas_fit(vec(bitdist), 4^L, true)
+entropy_avg = vec(mean(entropy, dims=1))
+plot_entropy(entropy_avg)
+
+
+# average over both of these quantities 
+# bitdist_avg = vec(mean(bitdist, dims=1))
+# entropy_avg = vec(mean(entropy, dims=1))
