@@ -10,10 +10,10 @@ ITensors.set_warn_order(50)
 do_save = true
 
 ## PARAMETERS ## 
-L = 5
+L = 11
 T = 100
 ε = 0
-nsamples = 5
+nsamples = 50
 
 ## CODE ## 
 for _ in 1:nsamples
