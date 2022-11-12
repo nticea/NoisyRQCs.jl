@@ -8,7 +8,7 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## LOADING IN RESULTS ##
-dir = "/Users/nicole/Dropbox/Grad school/Vedika/noisy_RQCs/NoisyRQCs.jl/outputs/benchmark/"
+dir = "/Users/nicole/sherlock/code/NoisyRQCs.jl/outputs/benchmark"
 fnames = filter(contains(r".h5$"), readdir(dir; join=true))
 r1 = load_results(fnames[1])
 L = r1.L

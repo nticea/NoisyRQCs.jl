@@ -6,7 +6,7 @@ using CurveFit
 struct Results
     L::Int
     T::Int 
-    ρ::MPO
+    ρ::Union{MPO,Nothing}
     bitdist::Vector{Float64}
     entropy::Vector{Float64}
 end
@@ -281,9 +281,13 @@ function save_structs(struc, path::String)
     end
 end
 
-function load_results(loadpath::String)
+function load_results(loadpath::String; load_state=false)
     f = h5open(loadpath,"r")
-    ρ = read(f, "ρ", MPO)
+    if load_state
+        ρ = read(f, "ρ", MPO)
+    else
+        ρ = nothing 
+    end
     d = read(f)
     return Results(d["L"], d["T"], ρ, d["bitdist"], d["entropy"])
 end
