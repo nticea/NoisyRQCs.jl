@@ -13,7 +13,7 @@ do_save = true
 L = 11
 T = 100
 ε = 0
-nsamples = 50
+nsamples = 5
 
 ## CODE ## 
 for _ in 1:nsamples
