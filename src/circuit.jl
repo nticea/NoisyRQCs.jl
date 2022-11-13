@@ -163,11 +163,11 @@ end
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, measure_entropy=false)
+function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=false)
     ρ = density_matrix(copy(ψ0)) # Make the density matrix 
     sites = siteinds(ψ0)
 
-    if measure_entropy
+    if benchmark
         entropy = Float64[]
     end
     
@@ -190,7 +190,7 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, measure_en
             ρ = apply_onesite_gate(ρ, n)
         end
 
-        if measure_entropy
+        if benchmark
             # Calculate the second Renyi entropy 
             L̃ = floor(Int, L/2)
             ρ_A = partial_trace(ρ, collect(1:L̃))
@@ -201,9 +201,10 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, measure_en
 
     @show tr(ρ)
 
-    if measure_entropy
-        return ρ, entropy
+    if benchmark
+        return ρ, entropy, purity
     end
+
 
     return ρ
 end

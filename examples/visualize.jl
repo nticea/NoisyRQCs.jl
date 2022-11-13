@@ -22,6 +22,6 @@ for (n,fn) in enumerate(fnames)
     entropy[n,:] = results.entropy
 end
 
-_porter_thomas_fit(vec(bitdist), 4^L, true)
+_porter_thomas_fit(vec(bitdist), 2^L, true)
 entropy_avg = vec(mean(entropy, dims=1))
-plot_entropy(entropy_avg)
+plot_entropy(entropy_avg, L)

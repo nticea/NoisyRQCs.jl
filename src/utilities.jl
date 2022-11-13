@@ -18,17 +18,32 @@ function initialize_wavefunction(;L::Int)
     productMPS(sites,state_arr) 
 end
 
-function plot_entropy(S::Vector{Float64})
-    plot(1:length(S), S)
-    title!("Second Renyi Entropy at L/2")
-    xlabel!("T")
+function entropy_dim(l::Int; d=2::Int)
+    d^l
 end
 
 function plot_entropy(r::Results)
-    S = r.entropy
-    plot(1:length(S), S)
-    title!("Entanglement Entropy")
+    plot_entropy(r.entropy, r.L)
+end
+
+function plot_entropy(S::Vector{Float64}, L::Int)
+    plot(1:length(S), S, label="Renyi entropy")
+    title!("Second Renyi Entropy at L/2")
     xlabel!("T")
+
+    # plot the reference
+    d = 2 # the local site dimension 
+    t = collect(1:length(S))
+    early_t = -log.((2*d/(d^2+1)) .^ t)
+    L_A = floor(Int, L/2)
+    L_B = L - L_A 
+    dimA = entropy_dim(L_A,d=d)
+    dimB = entropy_dim(L_B,d=d)
+    late_t = -log.((dimA + dimB)/(dimA * dimB + 1))
+
+    t_intersect = sort(findall(x -> x>late_t, early_t))[1]
+    plot!(early_t[1:t_intersect], label="Early t scaling")
+    hline!([late_t], label="Saturation value")
 end
 
 function entanglement_entropy(ψ::MPS; b=nothing)

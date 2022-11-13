@@ -7,7 +7,7 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-L = 9
+L = 5
 T = 100
 ε = 0
 nsamples = 50
@@ -32,7 +32,7 @@ for n in 1:nsamples
     ψ0 = initialize_wavefunction(L=L)
 
     # Apply the circuit 
-    ρ, S = apply_circuit(ψ0, T, ε=ε, measure_entropy=true)
+    ρ, S = apply_circuit(ψ0, T, ε=ε, benchmark=true)
 
     # get the distribution over bitstrings
     bdist = bitstring_distribution(ρ)
@@ -44,8 +44,3 @@ end
 _porter_thomas_fit(vec(bitdist), 4^L, true)
 entropy_avg = vec(mean(entropy, dims=1))
 plot_entropy(entropy_avg)
-
-
-# average over both of these quantities 
-# bitdist_avg = vec(mean(bitdist, dims=1))
-# entropy_avg = vec(mean(entropy, dims=1))
