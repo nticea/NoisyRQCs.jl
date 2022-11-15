@@ -19,7 +19,7 @@ T = 100
 
 # Saving info 
 timestamp = Dates.format(now(), "yyyy-mm-dd_HH:MM:SS")  
-paramstamp = "$(L)L_$(T)T"
+paramstamp = "$(L)L_$(T)T_$(ε)ε"
 save_path = joinpath(@__DIR__,timestamp*"_"*paramstamp*".h5")
 println("Saving to", save_path)
 
