@@ -8,20 +8,21 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## LOADING IN RESULTS ##
-dir = "/Users/nicole/sherlock/code/NoisyRQCs.jl/outputs/benchmark"
-fnames = filter(contains(r".h5$"), readdir(dir; join=true))
-r1 = load_results(fnames[1])
+#dir = "/Users/nicole/sherlock/code/NoisyRQCs.jl/outputs/benchmark"
+#fnames = filter(contains(r".h5$"), readdir(dir; join=true))
+#r1 = load_results(fnames[1])
+r1 = load_results("/Users/nicole/Dropbox/Grad school/Vedika/noisy_RQCs/NoisyRQCs.jl/outputs/preliminary/results/2022-11-19_15:14:26_11L_100T_0ε_200maxdim.h5")
 L = r1.L
 T = r1.T
 
-bitdist = zeros(length(fnames), 4^L)
-entropy = zeros(length(fnames), T)
-for (n,fn) in enumerate(fnames)
-    results = load_results(fn)
-    bitdist[n,:] = results.bitdist
-    entropy[n,:] = results.entropy
-end
+# bitdist = zeros(length(fnames), 4^L)
+# entropy = zeros(length(fnames), T)
+# for (n,fn) in enumerate(fnames)
+#     results = load_results(fn)
+#     bitdist[n,:] = results.bitdist
+#     entropy[n,:] = results.entropy
+# end
 
-_porter_thomas_fit(vec(bitdist), 2^L, true)
-entropy_avg = vec(mean(entropy, dims=1))
-plot_entropy(entropy_avg, L)
+# _porter_thomas_fit(vec(bitdist), 2^L, true)
+# entropy_avg = vec(mean(entropy, dims=1))
+# plot_entropy(entropy_avg, L)

@@ -34,7 +34,7 @@ bitdist = bitstring_distribution(ρ)
 if save_ρ
     results = Results(L, T, ρ, bitdist, entropy)
 else
-    results = Results(L, T, nothing, bitdist, entropy)
+    results = Results(L, T, 0, bitdist, entropy)
 end
 
 if do_save 

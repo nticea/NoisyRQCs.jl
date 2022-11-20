@@ -107,7 +107,7 @@ end
 """
 Apply a quantum channel ("gate") to a density matrix 
 """
-function apply_twosite_gate(ρ::MPO, G::ITensor; cutoff=0)
+function apply_twosite_gate(ρ::MPO, G::ITensor; maxdim=nothing)
     ρ̃ = copy(ρ)
 
     # Extract the common indices where we will be applying the channel 
@@ -127,7 +127,12 @@ function apply_twosite_gate(ρ::MPO, G::ITensor; cutoff=0)
 
     # SVD the resulting tensor 
     inds3 = uniqueinds(ρ̃[c1], ρ̃[c2])
-    U,S,V = ITensors.svd(wf,inds3,cutoff=cutoff)
+    # If maxdim is nothing, then implement no truncation cutoff
+    if isnothing(maxdim)
+        U,S,V = ITensors.svd(wf,inds3,cutoff=0)
+    else
+        U,S,V = ITensors.svd(wf,inds3,maxdim=maxdim)
+    end
 
     # Update the original MPO 
     ρ̃[c1] = U
@@ -160,26 +165,69 @@ function apply_onesite_gate(ρ::MPO, G::ITensor)
     return ρ̃
 end
 
+function maxlinkdim(ρ::MPO)
+    Lmid = floor(Int, length(ρ)/2)
+    return ITensors.dim(linkind(ρ, Lmid))
+end
+
+function maxlinkdim(ψ::MPS)
+    Lmid = floor(Int, length(ψ)/2)
+    return ITensors.dim(linkind(ψ, Lmid))
+end 
+
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=false)
+function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=false, maxdim=nothing)
+    L = length(ψ0)
+    if isnothing(maxdim)
+        println("No truncation")
+    else
+        println("Truncating at m=$(maxdim)")
+    end
+
     ρ = density_matrix(copy(ψ0)) # Make the density matrix 
     sites = siteinds(ψ0)
 
     if benchmark
-        entropy = Float64[]
+        state_entanglement = zeros(Float64, T)
+        operator_entanglement = zeros(Float64, T, L-3)
+        trace = zeros(Float64, T)
     end
     
     # Iterate over all time steps 
     for t in 1:T
         print(t,"-")
+
+        # benchmarking 
+        if benchmark
+            # The maximum link dimension
+            @show maxlinkdim(ρ)
+
+            # Calculate the second Renyi entropy (state entanglement)
+            ρ_A = partial_trace(ρ, collect(1:floor(Int, L/2)))
+            SR2 = second_Renyi_entropy(ρ_A)
+            state_entanglement[t] = real(SR2)
+
+            # Calculate the operator entropy
+            Ψ = combine_indices(ρ)
+            SvN = []
+            for b in 2:(L-2)
+                push!(SvN, entanglement_entropy(Ψ, b=b))
+            end
+            operator_entanglement[t,:] = SvN
+            
+            # trace
+            trace[t] = real.(tr(ρ))
+            @show trace[t]
+        end
+
         # At each time point, make a layer of random unitary gates 
         unitary_gates = unitary_layer(sites, t, random_type)
 
         # Now apply the gates to the wavefunction (alternate odd and even) 
         for u in unitary_gates
-            ρ = apply_twosite_gate(ρ, u)
+            ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
         end
 
         # Make the noise gates for this layer 
@@ -189,22 +237,13 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=
         for n in noise_gates
             ρ = apply_onesite_gate(ρ, n)
         end
-
-        if benchmark
-            # Calculate the second Renyi entropy 
-            L̃ = floor(Int, L/2)
-            ρ_A = partial_trace(ρ, collect(1:L̃))
-            SR2 = second_Renyi_entropy(ρ_A)
-            push!(entropy, real(SR2))
-        end
     end
 
     @show tr(ρ)
 
     if benchmark
-        return ρ, entropy, purity
+        return ρ, state_entanglement, operator_entanglement, trace 
     end
-
 
     return ρ
 end

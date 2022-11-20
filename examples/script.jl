@@ -7,10 +7,16 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-L = 5
+L = 9
 T = 100
 ε = 0
-nsamples = 50
+maxdims = [200, 250, nothing]
+nsamples = length(maxdims)
+
+## SAVING INFO ## 
+save_ρ = false
+do_save = false 
+save_path = @__DIR__
 
 ## CODE ## 
 
@@ -25,22 +31,48 @@ TODO
     2. Implement MPO entanglement entropy
 """
 bitdist = zeros(nsamples, 4^L)
-entropy = zeros(nsamples, T)
-for n in 1:nsamples
+state_entropy = zeros(nsamples, T)
+operator_entanglement = zeros(nsamples, T, L-3)
+trace = zeros(nsamples, T)
+
+for (n,maxdim) in enumerate(maxdims)
     print(n,"-")
     # Initialize the wavefunction to be all zeros 
     ψ0 = initialize_wavefunction(L=L)
 
     # Apply the circuit 
-    ρ, S = apply_circuit(ψ0, T, ε=ε, benchmark=true)
+    ρ, SR2, SvN_op, t  = apply_circuit(ψ0, T, ε=ε, benchmark=true, maxdim=maxdim)
 
     # get the distribution over bitstrings
     bdist = bitstring_distribution(ρ)
 
+    # Save the results 
+    if save_ρ
+        results = Results(L, T, ρ, bdist, SR2, SvN_op, t)
+    else
+        results = Results(L, T, 0, bdist, SR2, SvN_op, t)
+    end
+
+    if do_save 
+        save_structs(results, save_path)
+    end
+
+    # record the results 
     bitdist[n,:] = bdist
-    entropy[n,:] = S
+    state_entropy[n,:] = SR2
+    operator_entanglement[n,:,:] = SvN_op
+    trace[n,:] = t
 end
 
-_porter_thomas_fit(vec(bitdist), 4^L, true)
-entropy_avg = vec(mean(entropy, dims=1))
-plot_entropy(entropy_avg)
+state_entropy_avg = vec(mean(state_entropy, dims=1))
+operator_entanglement_avg = mean(operator_entanglement, dims=1)[1,:,:]
+midpoint_op_entanglement = operator_entanglement_avg[:, floor(Int, (L-3)/2)]
+trace_avg = vec(mean(trace, dims=1))
+
+# make some plots 
+_porter_thomas_fit(vec(bitdist), 2^L, true)
+plot_entropy(state_entropy_avg, L)
+plot(midpoint_op_entanglement)
+plot(operator_entanglement_avg[end,:])
+
+

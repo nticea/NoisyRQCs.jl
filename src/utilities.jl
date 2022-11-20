@@ -6,9 +6,11 @@ using CurveFit
 struct Results
     L::Int
     T::Int 
-    ρ::Union{MPO,Nothing}
+    ρ::Union{MPO,Int64}
     bitdist::Vector{Float64}
-    entropy::Vector{Float64}
+    state_entropy::Vector{Float64}
+    operator_entanglement::Matrix{Float64}
+    trace::Vector{Float64}
 end
 
 function initialize_wavefunction(;L::Int)
@@ -48,7 +50,7 @@ end
 
 function entanglement_entropy(ψ::MPS; b=nothing)
     if isnothing(b)
-        b = ceil(Int, length(ψ)/2)
+        b = floor(Int, length(ψ)/2)
     end
     orthogonalize!(ψ, b)
     U,S,V = svd(ψ[b], (linkind(ψ, b-1), siteind(ψ,b)))
@@ -237,7 +239,9 @@ function probability_distribution(m::MPS)
     # end
     @error "There might be something funky going on here with the orthogonality centre"
     if abs(1.0 - norm(m[1])) > 1E-8
-      error("probability_distribution: MPS is not normalized, norm=$(norm(m[1]))")
+        m ./= norm(m)
+        @error "probability_distribution: MPS is not normalized, norm=$(norm(m[1]))"
+      #error("probability_distribution: MPS is not normalized, norm=$(norm(m[1]))")
     end
 
     probs = zeros(N, d)
@@ -301,8 +305,9 @@ function load_results(loadpath::String; load_state=false)
     if load_state
         ρ = read(f, "ρ", MPO)
     else
-        ρ = nothing 
+        ρ = 0 
     end
     d = read(f)
-    return Results(d["L"], d["T"], ρ, d["bitdist"], d["entropy"])
+    return Results(d["L"], d["T"], ρ, d["bitdist"], d["state_entropy"], 
+            d["operator_entanglement"], d["trace"])
 end
