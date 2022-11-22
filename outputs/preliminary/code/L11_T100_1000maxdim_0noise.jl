@@ -17,10 +17,6 @@ maxdim = 1000
 ## SAVING INFO ## 
 save_ρ = false
 do_save = true 
-timestamp = Dates.format(now(), "yyyy-mm-dd_HH:MM:SS")  
-paramstamp = "$(L)L_$(T)T_$(ε)ε_$(maxdim)maxdim"
-save_path = joinpath(@__DIR__,"../results",timestamp*"_"*paramstamp*".h5")
-println("Saving to", save_path)
 
 ## CODE ## 
 
@@ -36,6 +32,10 @@ for n in 1:nsamples
     bdist = bitstring_distribution(ρ)
 
     # Save the results 
+    timestamp = Dates.format(now(), "yyyy-mm-dd_HH:MM:SS")  
+    paramstamp = "$(L)L_$(T)T_$(ε)ε_$(maxdim)maxdim"
+    save_path = joinpath(@__DIR__,"../results",timestamp*"_"*paramstamp*".h5")
+    println("Saving to", save_path)
     if save_ρ
         results = Results(L, T, ρ, bdist, SR2, SvN_op, t)
     else
