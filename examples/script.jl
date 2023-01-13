@@ -9,8 +9,8 @@ ITensors.set_warn_order(50)
 ## PARAMETERS ## 
 L = 9
 T = 100
-ε = 0
-maxdims = [200, 250, nothing]
+ε = 1e-5
+maxdims = [nothing]
 nsamples = length(maxdims)
 
 ## SAVING INFO ## 

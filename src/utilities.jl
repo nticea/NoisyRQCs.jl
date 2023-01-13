@@ -2,6 +2,7 @@ using ITensors
 using Plots 
 using StatsBase 
 using CurveFit
+using ITensors: linkinds
 
 struct Results
     L::Int
@@ -28,6 +29,15 @@ function plot_entropy(r::Results)
     plot_entropy(r.entropy, r.L)
 end
 
+function saturation_value(L::Int; d::Int=2)
+    # note: d is the original local site dimension 
+    L_A = floor(Int, L/2)
+    L_B = L - L_A 
+    dimA = entropy_dim(L_A,d=d)
+    dimB = entropy_dim(L_B,d=d)
+    return -log.((dimA + dimB)/(dimA * dimB + 1))
+end
+
 function plot_entropy(S::Vector{Float64}, L::Int)
     plot(1:length(S), S, label="Renyi entropy")
     title!("Second Renyi Entropy at L/2")
@@ -37,11 +47,7 @@ function plot_entropy(S::Vector{Float64}, L::Int)
     d = 2 # the local site dimension 
     t = collect(1:length(S))
     early_t = -log.((2*d/(d^2+1)) .^ t)
-    L_A = floor(Int, L/2)
-    L_B = L - L_A 
-    dimA = entropy_dim(L_A,d=d)
-    dimB = entropy_dim(L_B,d=d)
-    late_t = -log.((dimA + dimB)/(dimA * dimB + 1))
+    late_t = saturation_value(L, d=2)
 
     t_intersect = sort(findall(x -> x>late_t, early_t))[1]
     plot!(early_t[1:t_intersect], label="Early t scaling")
@@ -228,6 +234,48 @@ end
 
 function probability_distribution(ρ::MPO)
     probability_distribution(combine_indices(ρ))
+end
+
+"""
+physical_indices(ψ::MPS, idxlist::Vector{Int}, tag::String)
+    Given an INTEGER list of desired indices, 
+    return a list of the corresponding PHYSICAL Index (struct) of the MPS  
+"""
+function physical_indices(ψ::Union{MPS,MPO}, sitelist::Vector{Int}; tag::String="Site")
+    [getfirst(x -> hastags(x, tag), inds(ψ[s])) for s in sitelist]
+end
+
+function physical_indices(ψ::Union{MPS,MPO}; tag::String="Site")
+    [getfirst(x -> hastags(x, tag), inds(ψs)) for ψs in ψ]
+end
+
+function get_plev_inds(T::ITensor, lev::Int)
+    inds(T)[findall(x -> plev(x)==lev, inds(T))]
+end
+
+function primed_inds(T::ITensor)
+    return get_plev_inds(T, 1)
+end
+
+function unprimed_inds(T::ITensor)
+    return get_plev_inds(T, 0)
+end
+
+function taginds(T::ITensor, tag::String)
+    inds(T)[findall(x -> hastags(x, tag), inds(T))]
+end
+
+function tag_and_plev(T::ITensor; tag::String, lev::Int)
+    tinds = taginds(T, tag)
+    tinds[findall(x -> plev(x)==lev, tinds)]
+end
+
+function linkindT(T::ITensor)
+    taginds(T, "Link")
+end
+
+function siteindT(T::ITensor)
+    taginds(T, "Site")
 end
 
 function probability_distribution(m::MPS)
