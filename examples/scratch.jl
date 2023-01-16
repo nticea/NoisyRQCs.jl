@@ -6,14 +6,11 @@ P = P * P'
 Q = randn(n, n) + im * randn(n, n)
 Q = Q * Q'
 Z = ComplexVariable(n, n)
-
-objectivefcn2 = 
-    0.5 * real(tr(Z + Z'))
-
-
-constraintfcn2 = 
-    [P Z; Z' Q] ⪰ 0
-
-problem = maximize(objectivefcn2, constraintfcn2)
+objective = 0.5 * real(tr(Z + Z'))
+constraint = [P Z; Z' Q] ⪰ 0
+problem = maximize(objective, constraint)
 solve!(problem, SCS.Optimizer; silent_solver = true)
 computed_fidelity = evaluate(objective)
+
+@show typeof(objective)
+@show typeof(constraint)

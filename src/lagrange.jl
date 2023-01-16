@@ -196,9 +196,6 @@ function identity_operator(K::ITensor, Kdag::ITensor)
     # get some relevant indices 
     kinds = tag_and_plev(Kdag; tag="Site", lev=0)
 
-    # contract over the summation index 
-    KKdag = K*Kdag
-
     # combine the in and out indices 
     c_in = combiner(kinds, prime(kinds))
     c_out = combiner(prime(kinds,2), prime(kinds,3))
@@ -326,6 +323,90 @@ function CPTP_approximation(ρ::ITensor, ρ̃::ITensor)
     Id_arr = array(Id)
     @assert check_isometry(K, Kdag)
 
+    # checking that we are getting what we expect 
+    ## ACTUAL ## 
+    KρKdag = K*ρ*Kdag
+    if inds(KρKdag) != (lL, lR, L2, R2, L3, R3)
+        KρKdag = permute(KρKdag, lL, lR, L2, R2, L3, R3)
+    end
+    loss = norm(KρKdag - ρ̃)
+    @show loss 
+
+    X = combiner(L,R)
+    Y = combiner(L2,R2)
+    X1 = combiner(L1,R1)
+    Y1 = combiner(L3,R3)
+    B = combiner(lL,lR)
+
+    Xc = combinedind(X)
+    Yc = combinedind(Y)
+    X1c = combinedind(X1)
+    Y1c = combinedind(Y1)
+    Bc = combinedind(B)
+
+    KρKdag = KρKdag * B * Y * Y1 
+    
+
+    ## ELEMENTWISE ## 
+    K = K*X1*Y1
+    Kdag = Kdag*X*Y
+    ρ = ρ*B*X*X1
+    ρ̃ = ρ̃*B*Y*Y1
+
+    if inds(K) != (X1c, Y1c, S)
+        K = permute(K, X1c, Y1c, S)
+    end
+
+    if inds(Kdag) != (Xc, Yc, S)
+        Kdag = permute(Kdag, Xc, Yc, S)
+    end
+
+    if inds(ρ) != (Bc, Xc, X1c)
+        ρ = permute(ρ, Bc, Xc, X1c)
+    end
+
+    if inds(ρ̃) != (B, Yc, Y1c)
+        ρ̃ = permute(ρ̃, Bc, Yc, Y1c)
+    end
+
+    K_arr = array(K)
+    Kdag_arr = array(Kdag)
+    ρ_arr = array(ρ)
+    ρ̃_arr = array(ρ̃)  
+
+    # useful dimensions 
+    X = dL*dR
+    Y = dL2*dR2
+    X1 = dL1*dR1
+    Y1 = dL3*dR3
+    B = dlL*dlR
+
+    Nρ = zeros(ComplexF64, B, Y, Y1)
+
+    # Iterate through all of the link indices
+    for l in 1:B
+        # Iterate through all of the ys 
+        for y in 1:Y
+            for y1 in 1:Y1
+                # Iterate through all of the Kraus operators 
+                for s in 1:dS
+                    for x in 1:X
+                        for x1 in 1:X1
+                            @assert K_arr[x1, y1, s] == array(K)[x1, y1, s]
+                            @assert Kdag_arr[x, y1, s] == array(Kdag)[x, y1, s]
+                            @assert ρ_arr[l,x,x1] == array(ρ)[l,x,x1]
+                        end
+                    end
+                    #Nρ[l, y, y1] += transpose(K_arr[:, y1, s]) * @assert K_arr[x1, y1, s] == array(K)[x1, y1, s] * Kdag_arr[:, y, s]
+                end
+            end
+        end
+    end
+
+    loss2 = norm(Nρ - ρ̃_arr)
+    @show loss2 
+    println("")
+
     # # Check that reconstruction works 
     # Kflat = flatten_K(K, Kdag, ρ, ρ̃)
     # K̃_array = reconstruct_K(Kflat, K, Kdag, ρ, ρ̃)
@@ -372,65 +453,49 @@ function CPTP_approximation(ρ::ITensor, ρ̃::ITensor)
     # @assert Nρ_arr == array(KρKdag)
 
     ### COMPLEX CONVEX SOLVER ###
+    # objective = Variable()
+    # constraints = []
 
-    # useful dimensions 
-    X = dL*dR
-    Y = dL2*dR2
-    X1 = dL1*dR1
-    Y1 = dL3*dR3
-    B = dlL*dlR
+    # # useful dimensions 
+    # X = dL*dR
+    # Y = dL2*dR2
+    # X1 = dL1*dR1
+    # Y1 = dL3*dR3
+    # B = dlL*dlR
 
-    # Define the complex variable     
-    K_arr = [ComplexVariable(X1, Y1) for _ in 1:dS] #secretly is X1, Y1, dS
+    # # Define the complex variable     
+    # K_arr = [ComplexVariable(X1, Y1) for _ in 1:dS] #secretly is X1, Y1, dS
     
-    # Reshape the 
-    ρ_arr = reshape(ρ_arr, B, X, X1)
+    # # Reshape the density matrices 
+    # ρ_arr = reshape(ρ_arr, B, X, X1)
+    # ρ̃_arr = reshape(ρ̃_arr, B, X, X1)
     
-    # Iterate over the Kraus sumlink Index
-    for s in 1:dS
-        # Iterate over the link index in ρ
-        for l in 1:B
-            Ki = K_arr[s] # is size X1, Y1 
-            ρl = ρ_arr[l,:,:] # is size X, X1 
-            
-            # Iterate through the Y indices
-            KiρlKdagi = ComplexVariable(Y1,Y)
-            for y in 1:Y1
-                x = Ki[:,y]
-                quadform(x, ρl)
-            end
-        end
-    end
-
-    @assert 1==0
-
-    KdagK_arr = reshape(Kdag_arr, X*Y, dS) * reshape(K_arr, X1*Y1, dS)'
-    KdagK_arr = reshape(KdagK_arr, X, Y, X1, Y1)
-    KdagK_arr = permutedims(KdagK_arr, [1,3,2,4])
-    KdagK_arr = reshape(KdagK_arr, X*X1, Y*Y1)
+    # constraints = Convex.EqConstraint[]
     
-    # Contract w density matrix 
-    Nρ = reshape(ρ_arr, l, X*X1)*KdagK_arr #l, Y*Y1
-    Nρ = reshape(Nρ, dlL, dlR, dL2, dR2, dL3, dR3)
+    # # Iterate over the link index in ρ
+    # for l in 1:B
+    #     ρl = ρ_arr[l,:,:] # is size X, X1 
+    #     ρ̃l = ρ̃_arr[l,:,:] # also is size X, X1 
+        
+    #     # Iterate over the Kraus sumlink Index
+    #     for s in 1:dS
+    #         Ki = K_arr[s] # is size X1, Y1 
 
-    convex_objective = norm(Nρ - ρ̃_arr, 2)
-    convex_constraint = Id_arr == KdagK_arr
-    
-    # function convex_constraint()
-    #     Kdag_arr = conj(K_arr)
-    #     Kdag_arr == K_arr 
+    #         # the objective 
+    #         rec_loss = ρ̃l - quadform(Ki', ρl) # is size Y, Y1 
+    #         objective += sum(abs2(rec_loss))
 
-
-    #     # take the sum over K 
-    #     #@einsum KdagK[L, R, L1, R1, L2, R2, L3, R3] = Kdag_arr[L1, R1, L3, R3, S] * K_arr[L, R, L2, R2, S]
-    #     #KdagK == Id_arr 
+    #         # the constraint 
+    #         KdagK = quadform(Ki, Matrix(I, size(ρl)...))
+    #         push!(constraints, KdagK == Matrix(I, X1, Y1))
+    #     end
     # end
 
-    # Define the program using objective and constraints
-    p = minimize(convex_objective, convex_constraint)
+    # # Define the program using objective and constraints
+    # p = minimize(objective, constraints)
 
-    # Solve the program 
-    solve!(p, SCS.Optimizer; silent_solver = true)
+    # # Solve the program 
+    # solve!(p, SCS.Optimizer; silent_solver = true)
 
     # Evaluate the program 
     
