@@ -700,6 +700,8 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     ρ̃_arr = array(ρ̃)  
     Id_arr = array(Id)
 
+    ## FOR ROMAN --> FROM HERE ON!! ## 
+
     @show size(K_arr) # dX1, dY1, dS
     @show size(Kdag_arr) # dX, dY, dS
     @show size(ρ_arr) # dB, dX, dX1
@@ -712,7 +714,6 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     # define the variable being optimized over 
     x = [@variable(model, set = ComplexPlane()) for _ in 1:dX*dX1*dS] # K 
     x = @expression(model, reshape(x, dX, dX1, dS))
-    #@variable(model, x[1:dX, 1:dX1, 1:dS]) # K
     xconj = @expression(model, conj(x)) # Kdag 
 
     # construct the objective function 
