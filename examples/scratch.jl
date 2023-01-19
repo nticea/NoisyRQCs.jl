@@ -1,16 +1,13 @@
-using Convex, SCS, LinearAlgebra
+using ADNLPModels
+using NLPModelsIpopt
 
-n = 20
-P = randn(n, n) + im * randn(n, n)
-P = P * P'
-Q = randn(n, n) + im * randn(n, n)
-Q = Q * Q'
-Z = ComplexVariable(n, n)
-objective = 0.5 * real(tr(Z + Z'))
-constraint = [P Z; Z' Q] ⪰ 0
-problem = maximize(objective, constraint)
-solve!(problem, SCS.Optimizer; silent_solver = true)
-computed_fidelity = evaluate(objective)
+f(x) = (x[1] - 1.0)^2 + 100*(x[2] - x[1]^2)^2
+x0 = [-1.2; 1.0]
+lvar = [-Inf; 0.1]
+uvar = [0.5; 0.5]
+c(x) = [x[1] + x[2] - 2; x[1]^2 + x[2]^2]
+lcon = [0.0; -Inf]
+ucon = [Inf; 1.0]
+nlp = ADNLPModel(f, x0, lvar, uvar, c, lcon, ucon)
 
-@show typeof(objective)
-@show typeof(constraint)
+c

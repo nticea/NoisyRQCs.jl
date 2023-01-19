@@ -6,7 +6,11 @@ using LinearAlgebra
 using Kronecker
 using NLsolve
 using Einsum 
-using Convex, SCS # convex solvers 
+using Convex, SCS # convex solvers
+using ADNLPModels
+using NLPModelsIpopt
+using JuMP 
+
 
 """
 Apply a random circuit to the wavefunction ψ0
@@ -118,7 +122,7 @@ function truncation_channel(ρ::MPO, G::ITensor; maxdim=nothing)
         ρ_targ = replaceprime(ρ_targ, 1 => 3, tags="Site")
         ρ_targ = replaceprime(ρ_targ, 0 => 2, tags="Site")
 
-        Φ = CPTP_approximation(ρ2, ρ_targ) # find the nearest CPTP map
+        Φ = CPTP_approximation_JuMP(ρ2, ρ_targ) # find the nearest CPTP map
     end
 
     # Update the original MPO 
@@ -299,6 +303,114 @@ function reconstruct_K(Kflat::AbstractArray, dL1::Int, dR1::Int, dL3::Int, dR3::
     return K̃_array
 end
 
+"""
+ρ is the tensor to which we are applying the quantum channel
+ρ̃ is the desired output upon application of the quantum channel
+see https://juliasmoothoptimizers.github.io/tutorials/solve-an-optimization-problem-with-ipopt/
+"""
+# function CPTP_approximation(ρ::ITensor, ρ̃::ITensor; ε::Real=0)
+#     K,Kdag = initialize_channel(get_siteinds(ρ), random_init=false)
+    
+#     """
+#     After processing...
+#         K has indices L1, R1, L3, R3, S
+#         Kdag has indices L, R, L2, R2, S 
+#         ρ has indices lL, lR, L, R, L1, R1
+#         ρ̃ has indices lL, lR, L2, R2, L3, R3
+#         Id has indices L, R, L1, R1, L2, R2, L3, R3 
+#     """
+#     # Permute the tensors into standard form 
+#     K, Kdag, ρ, ρ̃, Id, L, R, L1, R1, L2, R2, L3, R3, S, lL, lR = get_all_indices(K,Kdag,ρ,ρ̃)
+#     dL, dR, dL1, dR1, dL2, dR2, dL3, dR3, dS, dlL, dlR = ITensors.dim.([L, R, L1, R1, L2, R2, L3, R3, S, lL, lR])
+#     @assert check_isometry(K, Kdag)
+
+#     # Making sure all the dimension
+#     if inds(K) != [L1, R1, L3, R3, S]
+#         K = permute(K, L1, R1, L3, R3, S)
+#     end
+
+#     if inds(Kdag) != [L, R, L2, R2, S]
+#         Kdag = permute(Kdag, [L, R, L2, R2, S])
+#     end
+
+#     if inds(ρ) != [lL, lR, L, R, L1, R1]
+#         ρ = permute(ρ, lL, lR, L, R, L1, R1)
+#     end
+
+#     if inds(ρ̃) != [lL, lR, L2, R2, L3, R3]
+#         ρ̃ = permute(lL, lR, L2, R2, L3, R3)
+#     end
+
+#     if inds(Id) != [L, R, L1, R1, L2, R2, L3, R3]
+#         Id = permute(Id, L, R, L1, R1, L2, R2, L3, R3)
+#     end
+
+#     K_arr = array(K)
+#     Kdag_arr = conj(K_arr)
+#     @assert Kdag_arr == array(Kdag)
+#     ρ_arr = array(ρ)
+#     ρ̃_arr = array(ρ̃)
+#     Id_arr = array(Id)
+
+#     @einsum Nρ[lL, lR, L2, R2, L3, R3] := K_arr[L1, R1, L3, R3, S] * ρ_arr[lL, lR, L, R, L1, R1] * Kdag_arr[L, R, L2, R2, S]
+#     @show size(Nρ)
+
+#     KρKdag = K*ρ*Kdag
+#     if inds(KρKdag) != (lL, lR, L2, R2, L3, R3)
+#         KρKdag = permute(KρKdag, lL, lR, L2, R2, L3, R3)
+#     end
+#     @assert Nρ == array(KρKdag)
+
+#     # Objective 
+#     K0 = reshape(K_arr, dL1*dR1*dL3*dR3*dS) # initial condition 
+#     lv = [-Inf for _ in 1:length(K0)]
+#     uv = [Inf for _ in 1:length(K0)]
+
+#     # Constraints
+#     Idflat = reshape(Id_arr, dL*dR*dL1*dR1*dL2*dR2*dL3*dR3)
+#     lc = Idflat .- ε # lower bound on constraint
+#     uc = Idflat .+ ε # upper bound on constraint
+
+#     @show size(K0)
+#     K_arr_rec = reshape(K0, dL1, dR1, dL3, dR3, dS)
+#     @show size(K_arr_rec)
+#     @assert array(K)==K_arr_rec
+
+#     function obj(x)::Real
+#         x_rec = reshape(x, dL1, dR1, dL3, dR3, dS)
+#         xconj_rec = conj(x_rec)
+#         @einsum Nρ[lL, lR, L2, R2, L3, R3] := x_rec[L1, R1, L3, R3, S] * ρ_arr[lL, lR, L, R, L1, R1] * xconj_rec[L, R, L2, R2, S]
+#         Δ = ρ̃_arr - Nρ
+#         return norm(Δ)
+#     end
+
+#     function cons(x)
+#         x_rec = reshape(x, dL1, dR1, dL3, dR3, dS)
+#         xconj_rec = conj(x_rec)
+#         @einsum xxT[L, R, L1, R1, L2, R2, L3, R3] := x_rec[L1, R1, L3, R3, S] * xconj_rec[L, R, L2, R2, S]
+#         xxT_flat = reshape(xxT, dL*dR*dL1*dR1*dL2*dR2*dL3*dR3)
+#         return xxT_flat[i]
+#     end
+
+#     nlp = ADNLPModel(
+#         x -> obj(x), # f(x)
+#         K0, # starting point, which can be your guess
+#         lv, # lower bounds on variables
+#         uv,  # upper bounds on variables
+#         x -> [cons(x,i) for i in 1:length(K0)], # constraints function - must be an array
+#         lc, # lower bounds on constraints
+#         uc   # upper bounds on constraints
+#     )
+
+#     output = ipopt(nlp)
+#     x = output.solution
+
+#     Ksol = reshape(x, dL1, dR1, dL3, dR3, dS)
+#     Kdagsol = conj(Ksol)
+
+#     println(output)
+# end
+
 
 """
 ρ is the tensor to which we are applying the quantum channel
@@ -325,87 +437,87 @@ function CPTP_approximation(ρ::ITensor, ρ̃::ITensor)
 
     # checking that we are getting what we expect 
     ## ACTUAL ## 
-    KρKdag = K*ρ*Kdag
-    if inds(KρKdag) != (lL, lR, L2, R2, L3, R3)
-        KρKdag = permute(KρKdag, lL, lR, L2, R2, L3, R3)
-    end
-    loss = norm(KρKdag - ρ̃)
-    @show loss 
+    # KρKdag = K*ρ*Kdag
+    # if inds(KρKdag) != (lL, lR, L2, R2, L3, R3)
+    #     KρKdag = permute(KρKdag, lL, lR, L2, R2, L3, R3)
+    # end
+    # loss = norm(KρKdag - ρ̃)
+    # @show loss 
 
-    X = combiner(L,R)
-    Y = combiner(L2,R2)
-    X1 = combiner(L1,R1)
-    Y1 = combiner(L3,R3)
-    B = combiner(lL,lR)
+    # X = combiner(L,R)
+    # Y = combiner(L2,R2)
+    # X1 = combiner(L1,R1)
+    # Y1 = combiner(L3,R3)
+    # B = combiner(lL,lR)
 
-    Xc = combinedind(X)
-    Yc = combinedind(Y)
-    X1c = combinedind(X1)
-    Y1c = combinedind(Y1)
-    Bc = combinedind(B)
+    # Xc = combinedind(X)
+    # Yc = combinedind(Y)
+    # X1c = combinedind(X1)
+    # Y1c = combinedind(Y1)
+    # Bc = combinedind(B)
 
-    KρKdag = KρKdag * B * Y * Y1 
+    # KρKdag = KρKdag * B * Y * Y1 
     
 
-    ## ELEMENTWISE ## 
-    K = K*X1*Y1
-    Kdag = Kdag*X*Y
-    ρ = ρ*B*X*X1
-    ρ̃ = ρ̃*B*Y*Y1
+    # ## ELEMENTWISE ## 
+    # K = K*X1*Y1
+    # Kdag = Kdag*X*Y
+    # ρ = ρ*B*X*X1
+    # ρ̃ = ρ̃*B*Y*Y1
 
-    if inds(K) != (X1c, Y1c, S)
-        K = permute(K, X1c, Y1c, S)
-    end
+    # if inds(K) != (X1c, Y1c, S)
+    #     K = permute(K, X1c, Y1c, S)
+    # end
 
-    if inds(Kdag) != (Xc, Yc, S)
-        Kdag = permute(Kdag, Xc, Yc, S)
-    end
+    # if inds(Kdag) != (Xc, Yc, S)
+    #     Kdag = permute(Kdag, Xc, Yc, S)
+    # end
 
-    if inds(ρ) != (Bc, Xc, X1c)
-        ρ = permute(ρ, Bc, Xc, X1c)
-    end
+    # if inds(ρ) != (Bc, Xc, X1c)
+    #     ρ = permute(ρ, Bc, Xc, X1c)
+    # end
 
-    if inds(ρ̃) != (B, Yc, Y1c)
-        ρ̃ = permute(ρ̃, Bc, Yc, Y1c)
-    end
+    # if inds(ρ̃) != (B, Yc, Y1c)
+    #     ρ̃ = permute(ρ̃, Bc, Yc, Y1c)
+    # end
 
-    K_arr = array(K)
-    Kdag_arr = array(Kdag)
-    ρ_arr = array(ρ)
-    ρ̃_arr = array(ρ̃)  
+    # K_arr = array(K)
+    # Kdag_arr = array(Kdag)
+    # ρ_arr = array(ρ)
+    # ρ̃_arr = array(ρ̃)  
 
-    # useful dimensions 
-    X = dL*dR
-    Y = dL2*dR2
-    X1 = dL1*dR1
-    Y1 = dL3*dR3
-    B = dlL*dlR
+    # # useful dimensions 
+    # X = dL*dR
+    # Y = dL2*dR2
+    # X1 = dL1*dR1
+    # Y1 = dL3*dR3
+    # B = dlL*dlR
 
-    Nρ = zeros(ComplexF64, B, Y, Y1)
+    # Nρ = zeros(ComplexF64, B, Y, Y1)
 
-    # Iterate through all of the link indices
-    for l in 1:B
-        # Iterate through all of the ys 
-        for y in 1:Y
-            for y1 in 1:Y1
-                # Iterate through all of the Kraus operators 
-                for s in 1:dS
-                    for x in 1:X
-                        for x1 in 1:X1
-                            @assert K_arr[x1, y1, s] == array(K)[x1, y1, s]
-                            @assert Kdag_arr[x, y1, s] == array(Kdag)[x, y1, s]
-                            @assert ρ_arr[l,x,x1] == array(ρ)[l,x,x1]
-                        end
-                    end
-                    #Nρ[l, y, y1] += transpose(K_arr[:, y1, s]) * @assert K_arr[x1, y1, s] == array(K)[x1, y1, s] * Kdag_arr[:, y, s]
-                end
-            end
-        end
-    end
+    # # Iterate through all of the link indices
+    # for l in 1:B
+    #     # Iterate through all of the ys 
+    #     for y in 1:Y
+    #         for y1 in 1:Y1
+    #             # Iterate through all of the Kraus operators 
+    #             for s in 1:dS
+    #                 for x in 1:X
+    #                     for x1 in 1:X1
+    #                         @assert K_arr[x1, y1, s] == array(K)[x1, y1, s]
+    #                         @assert Kdag_arr[x, y1, s] == array(Kdag)[x, y1, s]
+    #                         @assert ρ_arr[l,x,x1] == array(ρ)[l,x,x1]
+    #                     end
+    #                 end
+    #                 #Nρ[l, y, y1] += transpose(K_arr[:, y1, s]) * @assert K_arr[x1, y1, s] == array(K)[x1, y1, s] * Kdag_arr[:, y, s]
+    #             end
+    #         end
+    #     end
+    # end
 
-    loss2 = norm(Nρ - ρ̃_arr)
-    @show loss2 
-    println("")
+    # loss2 = norm(Nρ - ρ̃_arr)
+    # @show loss2 
+    # println("")
 
     # # Check that reconstruction works 
     # Kflat = flatten_K(K, Kdag, ρ, ρ̃)
@@ -452,50 +564,18 @@ function CPTP_approximation(ρ::ITensor, ρ̃::ITensor)
 
     # @assert Nρ_arr == array(KρKdag)
 
-    ### COMPLEX CONVEX SOLVER ###
-    # objective = Variable()
-    # constraints = []
-
-    # # useful dimensions 
-    # X = dL*dR
-    # Y = dL2*dR2
-    # X1 = dL1*dR1
-    # Y1 = dL3*dR3
-    # B = dlL*dlR
-
-    # # Define the complex variable     
-    # K_arr = [ComplexVariable(X1, Y1) for _ in 1:dS] #secretly is X1, Y1, dS
+    # useful dimensions 
+    X = dL*dR
+    Y = dL2*dR2
+    X1 = dL1*dR1
+    Y1 = dL3*dR3
+    B = dlL*dlR
     
-    # # Reshape the density matrices 
-    # ρ_arr = reshape(ρ_arr, B, X, X1)
-    # ρ̃_arr = reshape(ρ̃_arr, B, X, X1)
+    # Reshape the density matrices 
+    ρ_arr = reshape(ρ_arr, B, X, X1)
+    ρ̃_arr = reshape(ρ̃_arr, B, X, X1)
     
-    # constraints = Convex.EqConstraint[]
     
-    # # Iterate over the link index in ρ
-    # for l in 1:B
-    #     ρl = ρ_arr[l,:,:] # is size X, X1 
-    #     ρ̃l = ρ̃_arr[l,:,:] # also is size X, X1 
-        
-    #     # Iterate over the Kraus sumlink Index
-    #     for s in 1:dS
-    #         Ki = K_arr[s] # is size X1, Y1 
-
-    #         # the objective 
-    #         rec_loss = ρ̃l - quadform(Ki', ρl) # is size Y, Y1 
-    #         objective += sum(abs2(rec_loss))
-
-    #         # the constraint 
-    #         KdagK = quadform(Ki, Matrix(I, size(ρl)...))
-    #         push!(constraints, KdagK == Matrix(I, X1, Y1))
-    #     end
-    # end
-
-    # # Define the program using objective and constraints
-    # p = minimize(objective, constraints)
-
-    # # Solve the program 
-    # solve!(p, SCS.Optimizer; silent_solver = true)
 
     # Evaluate the program 
     
@@ -525,6 +605,142 @@ function CPTP_approximation(ρ::ITensor, ρ̃::ITensor)
 
     # end
     #nlsolve(f!, initial_x, autodiff = :forward)
+
+end
+
+function get_empty_expression_array(size_arr)
+    x = Vector{QuadExpr}(undef, prod(size_arr))
+
+    # for i in eachindex(x)
+    #     x[i] = QuadExpr(0.0+0.0im)
+    # end
+
+    x = reshape(x, size_arr...)
+
+    return x 
+end
+
+function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
+    K,Kdag = initialize_channel(get_siteinds(ρ), random_init=false)
+    
+    """
+    After processing...
+        K has indices L1, R1, L3, R3, S
+        Kdag has indices L, R, L2, R2, S 
+        ρ has indices lL, lR, L, R, L1, R1
+        ρ̃ has indices lL, lR, L2, R2, L3, R3
+        Id has indices L, R, L1, R1, L2, R2, L3, R3 
+    """
+    # Permute the tensors into standard form 
+    K, Kdag, ρ, ρ̃, Id, L, R, L1, R1, L2, R2, L3, R3, S, lL, lR = get_all_indices(K,Kdag,ρ,ρ̃)
+    dL, dR, dL1, dR1, dL2, dR2, dL3, dR3, dS, dlL, dlR = ITensors.dim.([L, R, L1, R1, L2, R2, L3, R3, S, lL, lR])
+    @assert check_isometry(K, Kdag)
+
+    X = combiner(L,R)
+    Y = combiner(L2,R2)
+    X1 = combiner(L1,R1)
+    Y1 = combiner(L3,R3)
+    B = combiner(lL,lR)
+
+    # checking that we are getting what we expect 
+    ## ACTUAL ## 
+    KρKdag = K*ρ*Kdag
+    if inds(KρKdag) != (lL, lR, L2, R2, L3, R3)
+        KρKdag = permute(KρKdag, lL, lR, L2, R2, L3, R3)
+    end
+    loss = norm(KρKdag - ρ̃)
+    @show loss 
+
+    KρKdag = KρKdag * B * Y * Y1 
+    
+
+    ## ELEMENTWISE ## 
+    K = K*X1*Y1
+    Kdag = Kdag*X*Y
+    ρ = ρ*B*X*X1
+    ρ̃ = ρ̃*B*Y*Y1
+    Id = Id*X*Y*X1*Y1
+
+    # Permute indices if necessary 
+    Xc = combinedind(X)
+    Yc = combinedind(Y)
+    X1c = combinedind(X1)
+    Y1c = combinedind(Y1)
+    Bc = combinedind(B)
+
+    dX = ITensors.dim(Xc)
+    dY = ITensors.dim(Yc)
+    dX1 = ITensors.dim(X1c)
+    dY1 = ITensors.dim(Y1c)
+    dB = ITensors.dim(Bc)
+
+    if inds(K) != (X1c, Y1c, S)
+        K = permute(K, X1c, Y1c, S)
+    end
+
+    if inds(Kdag) != (Xc, Yc, S)
+        Kdag = permute(Kdag, Xc, Yc, S)
+    end
+
+    if inds(ρ) != (Bc, Xc, X1c)
+        ρ = permute(ρ, Bc, Xc, X1c)
+    end
+
+    if inds(ρ̃) != (Bc, Yc, Y1c)
+        ρ̃ = permute(ρ̃, Bc, Yc, Y1c)
+    end
+
+    if inds(Id) != (Xc, Yc, X1c, Y1c)
+        Id = permute(Id, Xc, Yc, X1c, Y1c)
+    end
+
+    K_arr = array(K)
+    Kdag_arr = array(Kdag)
+    ρ_arr = array(ρ)
+    ρ̃_arr = array(ρ̃)  
+    Id_arr = array(Id)
+
+    @show size(K_arr) # dX1, dY1, dS
+    @show size(Kdag_arr) # dX, dY, dS
+    @show size(ρ_arr) # dB, dX, dX1
+    @show size(ρ̃_arr) # dB, dY, dY1
+    @show size(Id_arr) # dX, dY, dX1, dY1 
+
+    # Using JuMP
+    model = Model()
+
+    # define the variable being optimized over 
+    x = [@variable(model, set = ComplexPlane()) for _ in 1:dX*dX1*dS] # K 
+    x = @expression(model, reshape(x, dX, dX1, dS))
+    #@variable(model, x[1:dX, 1:dX1, 1:dS]) # K
+    xconj = @expression(model, conj(x)) # Kdag 
+
+    # construct the objective function 
+    Nρ = get_empty_expression_array(size(ρ̃_arr)) # dB, dY, dY1
+    KdagK = get_empty_expression_array(size(Id_arr)) # dX, dY, dX1, dY1
+    # iterate through all the kraus operators
+    for s in 1:dS
+        Ki = @expression(model, x[:,:,s])
+        Kdagi = @expression(model, xconj[:,:,s])
+        for x in 1:dX
+            for x1 in 1:dX1
+                for y in 1:dY
+                    for y1 in 1:dY1
+                        KdagK[x, y, x1, y1] = @expression(model, Kdagi[x, y] * Ki[x1, y1])
+                        for b in 1:dB
+                            Nρ[b, y, y1] = @expression(model, Ki[x1, y1] * ρ_arr[b, x, x1] * Kdagi[x, y]) 
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    loss = norm(ρ̃_arr - Nρ)
+    register(model, :loss, 1, loss; autodiff = true)
+
+    # define the objective 
+    @objective(model, Min, loss)
 
 end
 
