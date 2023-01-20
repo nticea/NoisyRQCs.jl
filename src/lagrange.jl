@@ -10,6 +10,7 @@ using Convex, SCS # convex solvers
 using ADNLPModels
 using NLPModelsIpopt
 using JuMP 
+using Ipopt
 
 
 """
@@ -644,14 +645,14 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
 
     # checking that we are getting what we expect 
     ## ACTUAL ## 
-    KρKdag = K*ρ*Kdag
-    if inds(KρKdag) != (lL, lR, L2, R2, L3, R3)
-        KρKdag = permute(KρKdag, lL, lR, L2, R2, L3, R3)
+    Nρ = K*ρ*Kdag
+    if inds(Nρ) != (lL, lR, L2, R2, L3, R3)
+        Nρ = permute(Nρ, lL, lR, L2, R2, L3, R3)
     end
-    loss = norm(KρKdag - ρ̃)
+    loss = norm(Nρ - ρ̃)
     @show loss 
 
-    KρKdag = KρKdag * B * Y * Y1 
+    Nρ = Nρ * B * Y * Y1 
     
 
     ## ELEMENTWISE ## 
@@ -700,7 +701,12 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     ρ̃_arr = array(ρ̃)  
     Id_arr = array(Id)
 
-    ## FOR ROMAN --> FROM HERE ON!! ## 
+    # Validate the make_KdagK and make_KρKdag methods 
+    KdagK = make_KdagK_arr(K_arr, dX, dY, dX1, dY1, dS)
+    KρKdag = make_KρKdag_arr(K_arr, ρ_arr, dX, dY, dX1, dY1, dS, dB)
+
+    @assert KρKdag == array(Nρ)
+    @assert KdagK == array(Id)
 
     @show size(K_arr) # dX1, dY1, dS
     @show size(Kdag_arr) # dX, dY, dS
@@ -709,40 +715,145 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     @show size(Id_arr) # dX, dY, dX1, dY1 
 
     # Using JuMP
-    model = Model()
+    # very relevant: https://github.com/jump-dev/JuMP.jl/issues/2060 
+    model = Model(Ipopt.Optimizer)
 
-    # define the variable being optimized over 
-    x = [@variable(model, set = ComplexPlane()) for _ in 1:dX*dX1*dS] # K 
-    x = @expression(model, reshape(x, dX, dX1, dS))
-    xconj = @expression(model, conj(x)) # Kdag 
+    # define K, the variable being optimized over 
+    K = [@variable(model, set = ComplexPlane()) for _ in 1:dX1*dY1*dS] # dX*dY*dS 
+    K = reshape(K, dX1, dY1, dS) # K has shape dX1, dY1, dS
+    
+    # Make K†
+    Kdag = LinearAlgebra.conj(K) # has shape dX, dY, dS 
 
-    # construct the objective function 
-    Nρ = get_empty_expression_array(size(ρ̃_arr)) # dB, dY, dY1
-    KdagK = get_empty_expression_array(size(Id_arr)) # dX, dY, dX1, dY1
-    # iterate through all the kraus operators
+    @NLexpression(model, loss, 0)
+    numconstraints = 0
     for s in 1:dS
-        Ki = @expression(model, x[:,:,s])
-        Kdagi = @expression(model, xconj[:,:,s])
         for x in 1:dX
-            for x1 in 1:dX1
-                for y in 1:dY
+            for y in 1:dY
+                for x1 in 1:dX1
                     for y1 in 1:dY1
-                        KdagK[x, y, x1, y1] = @expression(model, Kdagi[x, y] * Ki[x1, y1])
+                        KdagK_elem = @expression(model, K[x1, y1, s] * Kdag[x, y, s])
+                        Id_elem = Id_arr[x, y, x1, y1]
+                        @constraint(model, KdagK_elem==Id_elem)
+                        numconstraints += 1
                         for b in 1:dB
-                            Nρ[b, y, y1] = @expression(model, Ki[x1, y1] * ρ_arr[b, x, x1] * Kdagi[x, y]) 
+                            KρKdag_elem = @expression(model, KdagK_elem * ρ_arr[b, x, x1])
+                            Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
+                            Δreal = real(Δ)
+                            Δcomp = imag(Δ)
+                            Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
+                            loss = @NLexpression(model, loss+Δsquared)
                         end
                     end
                 end
             end
         end
     end
+
+    @NLobjective(model, Min, loss)
+    optimize!(model)
+
+    @show numconstraints
+    @show dX1*dY1*dS
+
+    @assert 1==0
+
+    # Compute K†K  
+    # KT = transpose(K)
+    # KdagK = @expression(model, Kdag * KT) 
+
+    # # Set the constraint K†K == Id 
+    # KdagK_cons = reshape(KdagK, dX, dY, dX1, dY1) # now has dimension dX, dY, dX1, dY1 
+    # @constraint(model, KdagK_cons .== Id_arr)
+
+    # #reshape ρ_arr 
+    # ρ = reshape(ρ_arr, dB, dX*dX1)
+
+    # # permute and reshape K†K so that we can multiply with ρ properly
+    # KdagK = permutedims(KdagK_cons, (1, 3, 2, 4)) # now is dX, dX1, dY, dY1 
+    # KdagK = reshape(KdagK, dX*dX1, dY*dY1) # now is dX*dX1, dY*dY1 
+
+    # # multiply K†K with ρ to get KρK† 
+    # KρKdag = @expression(model, ρ * KdagK)
+
+    # # decombine the Y index so that KρK† has the same dimensions as ρ̃
+    # KρKdag = reshape(KρKdag, dB, dY, dY1)
+
+    # # compute the difference between the reconstruction and the objective 
+    # Δ = ρ̃_arr - KρKdag 
     
-    loss = norm(ρ̃_arr - Nρ)
-    register(model, :loss, 1, loss; autodiff = true)
+    # # register the loss function for autodifferentiation 
+    # loss_norm(x...) = LinearAlgebra.norm(reshape(collect(x), dB, dY, dY1))
+    # register(model, :loss_norm, dB*dY*dY1, loss_norm; autodiff = true)
+    
+    # # compute the loss 
+    # loss = @NLexpression(model, loss_norm(Δ...))
 
-    # define the objective 
-    @objective(model, Min, loss)
+    # # define the objective 
+    # @NLobjective(model, Min, loss)
+end
 
+function compute_Δsquared_new(x::Real, y::Real, x1::Real, y1::Real, b::Real, s::Real, 
+                         dX::Real, dX1::Real, dY::Real, dY1::Real, dS::Real, dB::Real, 
+                         A...)
+
+    int(x) = floor(Int,x)
+    x, y, x1, y1, b, s = int.([x, y, x1, y1, b, s])
+
+    # extract the objects  
+    K = A[1:dX1*dY1*dS]
+    ρ = A[dX1*dY1*dS+1:end]
+    # put everything into the correct shape 
+    K = reshape(collect(A), dX1, dY1, dS)
+    Kdag = LinearAlgebra.conj(K) # has shape dX, dY, dS
+    ρ = reshape(ρ, dB, dX, dX1) 
+
+    KdagK_elem = K[x1, y1, s] * Kdag[x, y, s]
+    KρKdag_elem = KdagK_elem * ρ[b, x, x1]
+    Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
+    Δreal = real(Δ)
+    Δcomp = imag(Δ)
+    Δsquared = Δreal^2 + Δcomp^2
+    
+    return Δsquared
+end
+
+function make_KdagK_arr(K, dX, dY, dX1, dY1, dS)
+    # K has shape dX1, dY1, dS
+    # Kdag has shape dX, dY, dS 
+    Kdag = conj(K)
+    
+    #reshape everything 
+    K = reshape(K, dX1*dY1, dS)
+    Kdag = reshape(Kdag, dX*dY, dS)
+
+    # mutliply 
+    KdagK = Kdag * transpose(K) # has dimension dX*dY, dX1*dY1
+
+    # reshape again 
+    KdagK = reshape(KdagK, dX, dY, dX1, dY1) # has dimension dX, dY, dX1, dY1 
+
+    return KdagK 
+end
+
+function make_KρKdag_arr(K, ρ, dX, dY, dX1, dY1, dS, dB)
+    KdagK = make_KdagK_arr(K, dX, dY, dX1, dY1, dS)
+    
+    #reshape 
+    ρ = reshape(ρ, dB, dX*dX1)
+
+    # permute indices 
+    KdagK = permutedims(KdagK, (1, 3, 2, 4)) # now is dX, dX1, dY, dY1 
+
+    # reshape 
+    KdagK = reshape(KdagK, dX*dX1, dY*dY1)
+
+    # multiply matrices 
+    KρKdag = ρ * KdagK
+
+    KρKdag = reshape(KρKdag, dB, dY, dY1)
+
+    return KρKdag
 end
 
 
