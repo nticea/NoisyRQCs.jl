@@ -250,8 +250,8 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     if inds(Nρ) != (lL, lR, L2, R2, L3, R3)
         Nρ = permute(Nρ, lL, lR, L2, R2, L3, R3)
     end
-    loss = norm(Nρ - ρ̃)
-    @show loss  
+    loss_true = (norm(Nρ - ρ̃))^2
+    @show loss_true  
 
     ## Combine the legs ## 
     K = K*X1*Y1
@@ -286,6 +286,10 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
         Id = permute(Id, Xc, X1c)
     end
 
+    if inds(Nρ) != (Bc, Yc, Y1c)
+        Nρ = permute(Bc, Yc, Y1c)
+    end
+
     ## EXTRACT THE TENSORS FROM THE ITENSOR OBJECTS ##
     K_arr = array(K) # dX1, dY1, dS
     K_arr_flat = reshape(K_arr, dX1*dY1*dS) # dX1*dY1*dS
@@ -293,6 +297,7 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     ρ_arr = array(ρ) # dB, dX, dX1
     ρ̃_arr = array(ρ̃) # dB, dY, dY1
     Id_arr = array(Id) # dX, dX1 
+    Δ_arr = array(Nρ) - ρ̃_arr # dB, dY, dY1
 
     ## OPTIMIZATION ##
     # very relevant: https://github.com/jump-dev/JuMP.jl/issues/2060 
@@ -313,17 +318,30 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
         for x1 in 1:dX1
 
             # Sum over the contracted indices (y, y1, s)
-            KdagK_elem = @expression(model, K[x1, 1, 1] * Kdag[x, 1, 1])
-            for y in 2:dY # Only need to do the y sum. The sum over y1 picks out all the y1==y terms 
-                for s in 2:dS # Do the sum over the Kraus index 
-                    inc = @expression(model, K[x1, y, s] * Kdag[x, y, s]) # how much we are incrementing by 
+            KdagK_elem = @expression(model, 0)
+
+            # debugging 
+            KdagK_elem_debug = 0
+
+            for y in 1:dY # Only need to do the y sum. The sum over y1 picks out all the y1==y terms 
+                for s in 1:dS # Do the sum over the Kraus index 
+                    inc = @expression(model, K[x1, y, s] * Kdag[x, y, s])  
                     KdagK_elem = @expression(model, KdagK_elem + inc)
+
+                    # debugging 
+                    inc_debug = K_arr[x1, y, s] * Kdag_arr[x, y, s]
+                    KdagK_elem_debug += inc_debug
                 end
             end
 
             # we add the constraints here 
             Id_elem = Id_arr[x, x1]
             @constraint(model, KdagK_elem==Id_elem)
+
+            # debugging 
+            @assert Id_elem == KdagK_elem_debug
+            
+            # count the number of constraints 
             numconstraints += 1
 
         end
@@ -331,19 +349,31 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
 
     ## OBJECTIVE ## 
     @NLexpression(model, loss, 0)
+
+    # debugging 
+    loss_debug = 0 
     numsquares = 0 
+
     # We are computing K[x1, y1, s] * ρ[b, x, x1] * Kdag[x, y, s]
     for y in 1:dY # Y, Y1, and B are the free indices 
         for y1 in 1:dY1
             for b in 1:dB
 
                 # Now sum over the contracted indices 
-                KρKdag_elem = @expression(model, K[1, y1, 1] * ρ_arr[b, 1, 1] * Kdag[1, y, 1])
-                for x in 2:dX
-                    for x1 in 2:dX1
-                        for s in 2:dS # Kraus index 
+                KρKdag_elem = @expression(model, 0)
+
+                # for debugging 
+                KρKdag_elem_debug = 0
+
+                for x in 1:dX
+                    for x1 in 1:dX1
+                        for s in 1:dS # Kraus index 
                             inc = @expression(model, K[x1, y1, s] * ρ_arr[b, x, x1] * Kdag[x, y, s])
                             KρKdag_elem = @expression(model, KρKdag_elem + inc)
+
+                            # debugging 
+                            inc_debug = K_arr[x1, y1, s] * ρ_arr[b, x, x1] * Kdag_arr[x, y, s]
+                            KρKdag_elem_debug += inc_debug 
                         end
                     end
                 end
@@ -354,11 +384,25 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
                 Δcomp = imag(Δ)
                 Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
                 loss = @NLexpression(model, loss+Δsquared)
+
+                # debugging 
+                Δ_debug = KρKdag_elem_debug - ρ̃_arr[b, y, y1]
+                Δ_elem = Δ_arr[b, y, y1]
+                @assert Δ_debug == Δ_elem
+                Δreal_debug = real(Δ_debug)
+                Δcomp_debug = imag(Δ_debug)
+                Δsquared_debug = Δreal_debug^2 + Δcomp_debug^2
+                loss_debug += Δsquared_debug
+
+                # count the number of terms we are summing together 
                 numsquares += 1
 
             end
         end
     end
+
+    @show loss_debug 
+    @assert loss_debug == loss_true 
 
     @show numconstraints
     @show numsquares
