@@ -727,34 +727,44 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
 
     @NLexpression(model, loss, 0)
     numconstraints = 0
-    for s in 1:dS
-        for x in 1:dX
-            for y in 1:dY
-                for x1 in 1:dX1
-                    for y1 in 1:dY1
-                        KdagK_elem = @expression(model, K[x1, y1, s] * Kdag[x, y, s])
-                        Id_elem = Id_arr[x, y, x1, y1]
-                        @constraint(model, KdagK_elem==Id_elem)
-                        numconstraints += 1
-                        for b in 1:dB
-                            KρKdag_elem = @expression(model, KdagK_elem * ρ_arr[b, x, x1])
-                            Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
-                            Δreal = real(Δ)
-                            Δcomp = imag(Δ)
-                            Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
-                            loss = @NLexpression(model, loss+Δsquared)
-                        end
+    numsquares = 0
+
+    for x in 1:dX
+        for y in 1:dY
+            for x1 in 1:dX1
+                for y1 in 1:dY1
+                    KdagK_elem = @expression(model, K[x1, y1, 1] * Kdag[x, y, 1])
+
+                    # Do the sum over the Kraus index 
+                    for s in 2:dS
+                        KdagK_elem = @expression(model, KdagK_elem + K[x1, y1, s] * Kdag[x, y, s])
+                    end
+
+                    # Add the constraint 
+                    Id_elem = Id_arr[x, y, x1, y1]
+                    @constraint(model, KdagK_elem==Id_elem)
+                    numconstraints += 1
+                    
+                    for b in 1:dB
+                        KρKdag_elem = @expression(model, KdagK_elem * ρ_arr[b, x, x1])
+                        Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
+                        Δreal = real(Δ)
+                        Δcomp = imag(Δ)
+                        Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
+                        numsquares += 1
+                        loss = @NLexpression(model, loss+Δsquared)
                     end
                 end
             end
         end
     end
 
+    # @assert numconstraints == prod(size(K_arr)) # check that it is not overconstrained
+    # @assert numsquares == prod(size(ρ̃_arr))
+    @show numconstraints
+
     @NLobjective(model, Min, loss)
     optimize!(model)
-
-    @show numconstraints
-    @show dX1*dY1*dS
 
     @assert 1==0
 
