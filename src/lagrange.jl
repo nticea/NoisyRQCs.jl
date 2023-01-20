@@ -653,14 +653,6 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     @show loss 
 
     Nρ = Nρ * B * Y * Y1 
-    
-
-    ## ELEMENTWISE ## 
-    K = K*X1*Y1
-    Kdag = Kdag*X*Y
-    ρ = ρ*B*X*X1
-    ρ̃ = ρ̃*B*Y*Y1
-    Id = Id*X*Y*X1*Y1
 
     # Permute indices if necessary 
     Xc = combinedind(X)
@@ -668,6 +660,19 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     X1c = combinedind(X1)
     Y1c = combinedind(Y1)
     Bc = combinedind(B)
+    
+
+    ## ELEMENTWISE ## 
+    K = K*X1*Y1
+    Kdag = Kdag*X*Y
+    ρ = ρ*B*X*X1
+    ρ̃ = ρ̃*B*Y*Y1
+    Id = delta(Xc,X1c) # the old Id was wrong 
+    @show inds(Id)
+    # checking for isometry 
+    KdagK = Kdag*delta(Yc,Y1c)*K
+    @show inds(KdagK)
+    @assert array(Id)==array(KdagK)
 
     dX = ITensors.dim(Xc)
     dY = ITensors.dim(Yc)
@@ -691,70 +696,84 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
         ρ̃ = permute(ρ̃, Bc, Yc, Y1c)
     end
 
-    if inds(Id) != (Xc, Yc, X1c, Y1c)
-        Id = permute(Id, Xc, Yc, X1c, Y1c)
+    if inds(Id) != (Xc, X1c)
+        Id = permute(Id, Xc, X1c)
     end
 
     K_arr = array(K)
+    K_arr_flat = reshape(K_arr, dX1*dY1*dS)
     Kdag_arr = array(Kdag)
     ρ_arr = array(ρ)
     ρ̃_arr = array(ρ̃)  
     Id_arr = array(Id)
 
-    # Validate the make_KdagK and make_KρKdag methods 
-    KdagK = make_KdagK_arr(K_arr, dX, dY, dX1, dY1, dS)
-    KρKdag = make_KρKdag_arr(K_arr, ρ_arr, dX, dY, dX1, dY1, dS, dB)
-
-    @assert KρKdag == array(Nρ)
-    @assert KdagK == array(Id)
-
     @show size(K_arr) # dX1, dY1, dS
     @show size(Kdag_arr) # dX, dY, dS
     @show size(ρ_arr) # dB, dX, dX1
     @show size(ρ̃_arr) # dB, dY, dY1
-    @show size(Id_arr) # dX, dY, dX1, dY1 
+    @show size(Id_arr) # dX, dX1  
 
     # Using JuMP
     # very relevant: https://github.com/jump-dev/JuMP.jl/issues/2060 
     model = Model(Ipopt.Optimizer)
 
     # define K, the variable being optimized over 
-    K = [@variable(model, set = ComplexPlane()) for _ in 1:dX1*dY1*dS] # dX*dY*dS 
+    K = [@variable(model, set = ComplexPlane(), start=K_arr_flat[n]) for n in 1:dX1*dY1*dS] # dX*dY*dS 
     K = reshape(K, dX1, dY1, dS) # K has shape dX1, dY1, dS
     
     # Make K†
     Kdag = LinearAlgebra.conj(K) # has shape dX, dY, dS 
 
-    @NLexpression(model, loss, 0)
+    ## CONSTRAINTS ##
     numconstraints = 0
-    numsquares = 0
-
+    # We are performing Kdag[x, y, s] * K[x1, y1, s] * δ[y, y1]
     for x in 1:dX
-        for y in 1:dY
-            for x1 in 1:dX1
-                for y1 in 1:dY1
-                    KdagK_elem = @expression(model, K[x1, y1, 1] * Kdag[x, y, 1])
+        for x1 in 1:dX1
 
-                    # Do the sum over the Kraus index 
-                    for s in 2:dS
-                        KdagK_elem = @expression(model, KdagK_elem + K[x1, y1, s] * Kdag[x, y, s])
-                    end
+            # Sum over the contracted indices (y, y1, s)
+            KdagK_elem = @expression(model, K[x1, 1, 1] * Kdag[x, 1, 1])
+            for y in 2:dY # Only need to do the y sum. The sum over y1 picks out all the y1==y terms 
+                for s in 2:dS # Do the sum over the Kraus index 
+                    inc = @expression(model, K[x1, y, s] * Kdag[x, y, s]) # how much we are incrementing by 
+                    KdagK_elem = @expression(model, KdagK_elem + inc)
+                end
+            end
 
-                    # Add the constraint 
-                    Id_elem = Id_arr[x, y, x1, y1]
-                    @constraint(model, KdagK_elem==Id_elem)
-                    numconstraints += 1
-                    
-                    for b in 1:dB
-                        KρKdag_elem = @expression(model, KdagK_elem * ρ_arr[b, x, x1])
-                        Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
-                        Δreal = real(Δ)
-                        Δcomp = imag(Δ)
-                        Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
-                        numsquares += 1
-                        loss = @NLexpression(model, loss+Δsquared)
+            # we add the constraints here 
+            Id_elem = Id_arr[x, x1]
+            @constraint(model, KdagK_elem==Id_elem)
+            numconstraints += 1
+
+        end
+    end
+
+    ## OBJECTIVE ## 
+    @NLexpression(model, loss, 0)
+    numsquares = 0 
+    # We are computing K[x1, y1, s] * ρ[b, x, x1] * Kdag[x, y, s]
+    for y in 1:dY # Y, Y1, and B are the free indices 
+        for y1 in 1:dY1
+            for b in 1:dB
+
+                # Now sum over the contracted indices 
+                KρKdag_elem = @expression(model, K[1, y1, 1] * ρ_arr[b, 1, 1] * Kdag[1, y, 1])
+                for x in 2:dX
+                    for x1 in 2:dX1
+                        for s in 2:dS # Kraus index 
+                            inc = @expression(model, K[x1, y1, s] * ρ_arr[b, x, x1] * Kdag[x, y, s])
+                            KρKdag_elem = @expression(model, KρKdag_elem + inc)
+                        end
                     end
                 end
+
+                # Now take the difference 
+                Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
+                Δreal = real(Δ)
+                Δcomp = imag(Δ)
+                Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
+                loss = @NLexpression(model, loss+Δsquared)
+                numsquares += 1
+
             end
         end
     end
@@ -762,6 +781,7 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     # @assert numconstraints == prod(size(K_arr)) # check that it is not overconstrained
     # @assert numsquares == prod(size(ρ̃_arr))
     @show numconstraints
+    @show numsquares
 
     @NLobjective(model, Min, loss)
     optimize!(model)
