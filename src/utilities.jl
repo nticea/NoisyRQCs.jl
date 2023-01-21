@@ -3,6 +3,8 @@ using Plots
 using StatsBase 
 using CurveFit
 using ITensors: linkinds
+import Base.isapprox
+
 
 struct Results
     L::Int
@@ -276,6 +278,22 @@ end
 
 function siteindT(T::ITensor)
     taginds(T, "Site")
+end
+
+function isapprox(T1::ITensor, T2::ITensor; atol=1e-6)
+    # permute indices to match up 
+    if inds(T1) != inds(T2)
+        T1 = permute(T1, inds(T2))
+    end
+
+    # extract elements and compare
+    T1_arr = [array(T1)...]
+    T2_arr = [array(T2)...]
+
+    for (t1,t2) in zip(T1_arr,T2_arr)
+        @assert isapprox.(t1, t2, atol=atol)
+    end
+    return true 
 end
 
 function probability_distribution(m::MPS)

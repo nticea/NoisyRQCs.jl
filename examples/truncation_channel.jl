@@ -9,7 +9,7 @@ ITensors.set_warn_order(50)
 ## PARAMETERS ## 
 L = 9
 T = 20
-ε = 0
+ε = 0.25
 maxdim = 200
 
 # Initialize the wavefunction to be all zeros 

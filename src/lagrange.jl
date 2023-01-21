@@ -138,18 +138,18 @@ function initialize_channel(SInds; random_init=false)
     cS = combinedind(CS) # make a new label for the combined indices 
 
     # Make the kraus operators
-    Id = sqrt(1-ε) * Matrix(I, 2, 2)
-    σx = sqrt(ε/3) * [0.0 1.0 
+    Id = Matrix(I, 2, 2)
+    σx = [0.0 1.0 
           1.0 0.0] 
-    σy = sqrt(ε/3) * [0.0 -1.0im 
+    σy = [0.0 -1.0im 
           -1.0im 0.0]
-    σz = sqrt(ε/3) * [1.0 0.0 
+    σz = [1.0 0.0 
           0.0 -1.0]
 
-    Ids = copy(Id)
-    σxs = copy(σx)
-    σys = copy(σy)
-    σzs = copy(σz)
+    Ids = sqrt(1-ε) * copy(Id)
+    σxs = sqrt(ε/3) * copy(σx)
+    σys = sqrt(ε/3) * copy(σy)
+    σzs = sqrt(ε/3) * copy(σz)
 
     for _ in 2:length(SInds)
         # Build up the total operator 
@@ -251,7 +251,6 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
         Nρ = permute(Nρ, lL, lR, L2, R2, L3, R3)
     end
     loss_true = (norm(Nρ - ρ̃))^2
-    @show loss_true  
 
     ## Combine the legs ## 
     K = K*X1*Y1
@@ -263,7 +262,9 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
 
     # checking for isometry 
     KdagK = Kdag*delta(Yc,Y1c)*K
-    @assert array(Id)==array(KdagK)
+    @assert isapprox(KdagK, Id) 
+    
+    #@assert array(Id)==array(KdagK)
 
     ## PERMUTE ALL THE INDICES TO MAKE SURE WE HAVE WHAT WE WANT ## 
     if inds(K) != (X1c, Y1c, S)
@@ -339,7 +340,7 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
             @constraint(model, KdagK_elem==Id_elem)
 
             # debugging 
-            @assert Id_elem == KdagK_elem_debug
+            @assert isapprox(Id_elem, KdagK_elem_debug, atol=1e-6) 
             
             # count the number of constraints 
             numconstraints += 1
@@ -388,7 +389,7 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
                 # debugging 
                 Δ_debug = KρKdag_elem_debug - ρ̃_arr[b, y, y1]
                 Δ_elem = Δ_arr[b, y, y1]
-                @assert Δ_debug == Δ_elem
+                @assert isapprox(Δ_debug, Δ_elem, atol=1e-6)
                 Δreal_debug = real(Δ_debug)
                 Δcomp_debug = imag(Δ_debug)
                 Δsquared_debug = Δreal_debug^2 + Δcomp_debug^2
@@ -401,16 +402,13 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
         end
     end
 
-    @show loss_debug 
-    @assert loss_debug == loss_true 
-
-    @show numconstraints
-    @show numsquares
+    @assert isapprox(loss_debug, loss_true, atol=1e-6) 
 
     @NLobjective(model, Min, loss)
     optimize!(model)
 
-    @assert 1==0
+    @show loss_true  
+    @show objective_value(model)
 end
 
 
