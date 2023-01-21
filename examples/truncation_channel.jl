@@ -7,10 +7,10 @@ include("../src/utilities.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-L = 9
+L = 5
 T = 20
-ε = 0.25
-maxdim = 200
+ε = 0
+maxdim = 10
 
 # Initialize the wavefunction to be all zeros 
 ψ0 = initialize_wavefunction(L=L)

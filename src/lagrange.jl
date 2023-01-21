@@ -250,7 +250,7 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     if inds(Nρ) != (lL, lR, L2, R2, L3, R3)
         Nρ = permute(Nρ, lL, lR, L2, R2, L3, R3)
     end
-    loss_true = (norm(Nρ - ρ̃))^2
+    initial_loss = (norm(Nρ - ρ̃))^2
 
     ## Combine the legs ## 
     K = K*X1*Y1
@@ -299,6 +299,7 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     ρ̃_arr = array(ρ̃) # dB, dY, dY1
     Id_arr = array(Id) # dX, dX1 
     Δ_arr = array(Nρ) - ρ̃_arr # dB, dY, dY1
+    true_loss = (norm(ρ_arr-ρ̃_arr))^2
 
     ## OPTIMIZATION ##
     # very relevant: https://github.com/jump-dev/JuMP.jl/issues/2060 
@@ -308,12 +309,16 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
     # Initialize with the 'identity' version of K 
     K = [@variable(model, set = ComplexPlane(), start=K_arr_flat[n]) for n in 1:dX1*dY1*dS] # dX*dY*dS 
     K = reshape(K, dX1, dY1, dS) # now has shape dX1, dY1, dS
+    # try to initialize as Hermitian <-- DOES NOT WORK FOR SOME REASON ! Just implement as constraint? 
+    # K = [@variable(model, [1:dX1,1:dY1] in HermitianPSDCone()) for _ in 1:dS] # dX*dY*dS 
+    # K = cat(K..., dims=3)
     
     # Make K†
     Kdag = LinearAlgebra.conj(K) # has shape dX, dY, dS 
 
     ## CONSTRAINTS ##
-    numconstraints = 0
+    num_isometry_constraints = 0
+    num_hermitian_constraints=0
     # We are performing Kdag[x, y, s] * K[x1, y1, s] * δ[y, y1]
     for x in 1:dX
         for x1 in 1:dX1
@@ -329,6 +334,14 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
                     inc = @expression(model, K[x1, y, s] * Kdag[x, y, s])  
                     KdagK_elem = @expression(model, KdagK_elem + inc)
 
+                    # Hermiticity constraint
+                    if x1<y
+                        if x==1 
+                            @constraint(model, K[x1, y, s]==conj(K[y, x1, s]))
+                            num_hermitian_constraints += 1
+                        end
+                    end
+
                     # debugging 
                     inc_debug = K_arr[x1, y, s] * Kdag_arr[x, y, s]
                     KdagK_elem_debug += inc_debug
@@ -343,7 +356,7 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
             @assert isapprox(Id_elem, KdagK_elem_debug, atol=1e-6) 
             
             # count the number of constraints 
-            numconstraints += 1
+            num_isometry_constraints += 1
 
         end
     end
@@ -402,13 +415,22 @@ function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
         end
     end
 
-    @assert isapprox(loss_debug, loss_true, atol=1e-6) 
+    @assert isapprox(loss_debug, initial_loss, atol=1e-6) 
 
     @NLobjective(model, Min, loss)
     optimize!(model)
 
-    @show loss_true  
+    println("RESULTS:")
+    @show initial_loss
+    @show true_loss  
     @show objective_value(model)
+    Ksoln = value.(K)
+
+    @show Ksoln[1:10]
+    @show K_arr_flat[1:10]
+
+    println("END RESULTS")
+    println("")
 end
 
 
