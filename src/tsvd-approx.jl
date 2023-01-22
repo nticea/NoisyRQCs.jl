@@ -5,7 +5,7 @@ using JuMP
 using Ipopt
 
 # generate random density matrix
-ndims = 2
+ndims = 5
 npurestates = 10
 purestates = mapslices(x -> x / norm(x), rand(Complex{Float64}, ndims, npurestates), dims=1)
 puredensities = Array([r * r' for r in eachslice(purestates, dims=2)])
@@ -14,24 +14,25 @@ weights = weights ./ sum(weights)
 r = sum(puredensities .* weights)
 
 # TSVD
-tdim = 1
+ntrim = 2
+tdim = ndims - 1
 (U, s, V) = tsvd(r, tdim)
 rprime = U * diagm(s) * V'
 
 # optimization
-nkrauss = 10
+nkraus = 4
 
 model = Model(Ipopt.Optimizer)
 
 # Krauss operator variables
 # complex array variables are not currently  supported, so have to reshape
-Ksdims = (ndims, ndims, nkrauss)
+Ksdims = (ndims, ndims, nkraus)
 Kindices = CartesianIndices(Ksdims)
 Kelems = [@variable(model, set = ComplexPlane(), start = I[i, j]) for (i, j, k) in Tuple.(Kindices)]
 Ks = reshape(Kelems, Ksdims)
 
-# Krauss operator contraints: Kᵢ†Kᵢ = 1
-[@constraint(model, K' * K .== I) for K in eachslice(Ks, dims=3)]
+# Krauss operator contraints: ∑ᵢKᵢ†Kᵢ = 1
+@constraint(model, sum(K' * K for K in eachslice(Ks, dims=3)) .== I)
 
 # Find the difference between the approximation and tsvd matrix and compute Frobenius norm
 # ∑ᵢKᵢρKᵢ† - ρ̃.
