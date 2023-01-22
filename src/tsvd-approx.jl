@@ -4,42 +4,51 @@ using TSVD
 using JuMP
 using Ipopt
 
-# generate random density matrix
-ndims = 5
-npurestates = 10
+# parameters
+ndims = 15
+npurestates = 1
+nkraus = 4
+truncdims = 4
+
+# 1. generate random density matrix
+# TODO: better sample distribution for densities
 purestates = mapslices(x -> x / norm(x), rand(Complex{Float64}, ndims, npurestates), dims=1)
 puredensities = Array([r * r' for r in eachslice(purestates, dims=2)])
 weights = rand(Float64, npurestates)
 weights = weights ./ sum(weights)
-r = sum(puredensities .* weights)
+ρ = sum(puredensities .* weights)
 
-# TSVD
-ntrim = 2
-tdim = ndims - 1
-(U, s, V) = tsvd(r, tdim)
-rprime = U * diagm(s) * V'
+# 2. Compute exact truncated SVD
+# TODO: do actual bond dimension reduction
+(U, s, V) = tsvd(ρ, truncdims)
+ρ̃ = U * diagm(s) * V'
 
-# optimization
-nkraus = 4
-
+# 3. Approximate truncated density matrix with quantum operation by finding optimal Kraus
+#    operators using non-convex optimization (quartic objective with quadratic constraint)
+#
+#                                    min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
+#                                    s.t.    ∑ᵢKᵢ†Kᵢ = I
 model = Model(Ipopt.Optimizer)
 
-# Krauss operator variables
-# complex array variables are not currently  supported, so have to reshape
+# a. Build Krauss operator variables
+# complex array variables are not currently supported, so have to reshape
 Ksdims = (ndims, ndims, nkraus)
-Kindices = CartesianIndices(Ksdims)
-Kelems = [@variable(model, set = ComplexPlane(), start = I[i, j]) for (i, j, k) in Tuple.(Kindices)]
-Ks = reshape(Kelems, Ksdims)
+# Optimizer needs help with starting from a feasible point, using Kᵢ = I
+Ks = reshape([
+        @variable(model, set = ComplexPlane(), start = I[i, j])
+        for (i, j, _) in Tuple.(CartesianIndices(Ksdims))
+    ], Ksdims)
 
-# Krauss operator contraints: ∑ᵢKᵢ†Kᵢ = 1
+# b. define Krauss operators contraint: ∑ᵢKᵢ†Kᵢ = I
 @constraint(model, sum(K' * K for K in eachslice(Ks, dims=3)) .== I)
 
-# Find the difference between the approximation and tsvd matrix and compute Frobenius norm
-# ∑ᵢKᵢρKᵢ† - ρ̃.
-approx = @expression(model, sum(K * r * K' for K in eachslice(Ks, dims=3)))
-diff = @expression(model, approx - rprime)
+# c. Find the difference between the approximation and tsvd matrix and compute Frobenius norm
+#                                    ∑ᵢKᵢρKᵢ† - ρ̃.
+approx = @expression(model, sum(K * ρ * K' for K in eachslice(Ks, dims=3)))
+diff = @expression(model, approx - ρ̃)
 
-# Compute the Frobenius norm. This will have quartic terms, so we have to use NLexpression
+# d. Compute the Frobenius norm. This will have quartic terms, so we have to use NLexpression
+# NLexpression does not support complex variables :(
 diffreal = real(diff)
 diffimag = imag(diff)
 fnorm = @NLexpression(model,
@@ -49,9 +58,11 @@ fnorm = @NLexpression(model,
 )
 @NLobjective(model, Min, fnorm)
 
+# e. Let's optimize!
 optimize!(model)
 
+# 4. Process results
 @show objective_value(model)
-@show r
-@show rprime
-@show value.(approx)
+@show ρ
+@show ρ̃
+@show value.(diff)
