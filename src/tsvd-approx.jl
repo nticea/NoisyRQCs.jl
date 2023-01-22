@@ -1,14 +1,15 @@
 
 using LinearAlgebra
-using MadNLP
 using TSVD
+using JuMP
+using Ipopt
 
 # generate random density matrix
 ndims = 2
 npurestates = 10
 purestates = mapslices(x -> x / norm(x), rand(Complex{Float64}, ndims, npurestates), dims=1)
 puredensities = Array([r * r' for r in eachslice(purestates, dims=2)])
-weights = rand(Float64, numpurestates)
+weights = rand(Float64, npurestates)
 weights = weights ./ sum(weights)
 r = sum(puredensities .* weights)
 
@@ -18,7 +19,7 @@ tdim = 1
 rprime = U * diagm(s) * V'
 
 # optimization
-nkrauss = 100
+nkrauss = 10
 
 model = Model(Ipopt.Optimizer)
 
@@ -33,7 +34,7 @@ Ks = reshape(Kelems, Ksdims)
 [@constraint(model, K' * K .== I) for K in eachslice(Ks, dims=3)]
 
 # Find the difference between the approximation and tsvd matrix and compute Frobenius norm
-#                                  ∑ᵢKᵢρKᵢ† - ρ̃.
+# ∑ᵢKᵢρKᵢ† - ρ̃.
 approx = @expression(model, sum(K * r * K' for K in eachslice(Ks, dims=3)))
 diff = @expression(model, approx - rprime)
 
@@ -50,3 +51,6 @@ fnorm = @NLexpression(model,
 optimize!(model)
 
 @show objective_value(model)
+@show r
+@show rprime
+@show value.(approx)
