@@ -93,31 +93,61 @@ function physical_indices(ψ::ITensor; tag::String="Site")
     getfirst(x -> hastags(x, tag), inds(ψ))
 end
 
-function partial_trace(ρ::MPO, indslist::Vector{Int})
+# here we are KEEPING the indices in indslist 
+function reduced_density_matrix(ρ::MPO, indslist::Vector{Int})
+    # the indices to keep must be a continuous chunk
     sort!(indslist)
-    ρ̃ = copy(ρ)
-    sites = physical_indices(ρ)[indslist]
-    # Go through all the traced-out sites and tie them together 
-    for (i,s) in zip(indslist, sites)
-        ρ̃[i] *= delta(s, prime(s))
+    @assert indslist == collect(indslist[begin]:indslist[end])
+    L = length(ρ)
+
+    # first, trace out the indices on the LHS  
+    linds = collect(1:indslist[begin]-1)
+    if length(linds) > 0
+        ρ = partial_trace(ρ, linds, "left")
     end
+    
+    # now trace out the indices on the RHS 
+    rinds = collect(indslist[end]+1:L) .- length(linds)
+    if length(rinds) > 0
+        ρ = partial_trace(ρ, rinds, "right")
+    end
+
+    return ρ
+end
+
+# here we are TRACING OUT the indices in indslist 
+function partial_trace(ρ::MPO, indslist::Vector{Int}, side::String)
+    ρ = copy(ρ)
+    s = physical_indices(ρ) # these are the physical sites 
+
+    if side=="left"
+        border_idx = indslist[end]+1
+    elseif side=="right"
+        border_idx = indslist[begin]-1
+    else
+        @error side*" is not recognized"
+    end
+
+    orthogonalize!(ρ, border_idx)
+
+    # trace out the indices in indslist
+    for i in indslist
+        ρ[i] = ρ[i]*delta(s[i],prime(s[i]))
+    end
+
+    # contract the indices in indslist
+    L = ITensor(1.0)
+    for i in indslist
+        L *= ρ[i]
+    end
+
+    # mutliply this into the remaining ρ
+    ρ[border_idx] *= L 
 
     to_keep = setdiff(collect(1:length(ρ)), indslist)
-    sites_to_keep = physical_indices(ρ)[to_keep]
-    blocks = [to_keep[findnearest(to_keep, k)] for k in indslist]
+    ρ_new = MPO(ρ[to_keep])
 
-    orthogonalize!(ρ̃, minimum(to_keep))
-
-    for i in 1:length(indslist)
-        # Multiply the link indices into the nearest site that we keep 
-        nearest_site = blocks[i]
-        ρ̃[nearest_site] *= ρ̃[indslist[i]]            
-    end
-    ρ_new = randomMPO(sites_to_keep)
-    orthogonalize!(ρ_new, 1)
-    ρ_new.data = ρ̃[to_keep]
-
-    return ρ_new
+    return ρ_new 
 end
 
 function get_D(ρ::MPO)

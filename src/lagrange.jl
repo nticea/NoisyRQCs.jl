@@ -16,7 +16,7 @@ using Ipopt
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit_truncation_channel(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=false, maxdim=nothing)
+function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; random_type="Haar", ε=0.05, benchmark=false, maxdim=nothing)
     L = length(ψ0)
     if isnothing(maxdim)
         println("No truncation")
@@ -26,46 +26,17 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int; random_type="Haar", 
 
     ρ = density_matrix(copy(ψ0)) # Make the density matrix 
     sites = siteinds(ψ0)
-
-    if benchmark
-        state_entanglement = zeros(Float64, T)
-        operator_entanglement = zeros(Float64, T, L-3)
-        trace = zeros(Float64, T)
-    end
     
     # Iterate over all time steps 
     for t in 1:T
         print(t,"-")
-
-        # benchmarking 
-        if benchmark
-            # The maximum link dimension
-            @show maxlinkdim(ρ)
-
-            # Calculate the second Renyi entropy (state entanglement)
-            ρ_A = partial_trace(ρ, collect(1:floor(Int, L/2)))
-            SR2 = second_Renyi_entropy(ρ_A)
-            state_entanglement[t] = real(SR2)
-
-            # Calculate the operator entropy
-            Ψ = combine_indices(ρ)
-            SvN = []
-            for b in 2:(L-2)
-                push!(SvN, entanglement_entropy(Ψ, b=b))
-            end
-            operator_entanglement[t,:] = SvN
-            
-            # trace
-            trace[t] = real.(tr(ρ))
-            @show trace[t]
-        end
 
         # At each time point, make a layer of random unitary gates 
         unitary_gates = unitary_layer(sites, t, random_type)
 
         # Now apply the gates to the wavefunction (alternate odd and even) 
         for u in unitary_gates
-            ρ = truncation_channel(ρ, u, maxdim=maxdim)
+            ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
         end
 
         # Make the noise gates for this layer 
@@ -75,6 +46,8 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int; random_type="Haar", 
         for n in noise_gates
             ρ = apply_onesite_gate(ρ, n)
         end
+
+        truncation_quantum_channel(ρ, truncdim) 
     end
 
     @show tr(ρ)
@@ -86,51 +59,107 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int; random_type="Haar", 
     return ρ
 end
 
-"""
-Apply a quantum channel ("gate") to a density matrix 
-"""
-function truncation_channel(ρ::MPO, G::ITensor; maxdim=nothing)
-    ρ̃ = copy(ρ)
+function truncation_quantum_channel(ρ::MPO, truncdim::Int; truncidx::Union{Int,Nothing}=nothing)
+    ρ = copy(ρ)
     L = length(ρ)
 
-    # Extract the common indices where we will be applying the channel 
-    c = findall(x -> hascommoninds(G, ρ[x]), collect(1:length(ρ)))
-    @assert length(c) == 2
-    c1, c2 = c
-
-    # Orthogonalize the MPS around this site 
-    orthogonalize!(ρ,c1)
-
-    # Apply the gate 
-    ρ2 = (ρ̃[c1] * ρ̃[c2]) * G
-
-    # Lower the prime level by 1 to get back to what we originally had 
-    ρ2 = replaceprime(ρ2, 3 => 1, tags="Site")
-    ρ2 = replaceprime(ρ2, 2 => 0, tags="Site")
-
-    # SVD the resulting tensor 
-    Linds = uniqueinds(ρ̃[c1], ρ̃[c2])
-    # If maxdim is nothing, then implement no truncation cutoff
-    if isnothing(maxdim)
-        U,S,V = ITensors.svd(ρ2,Linds,cutoff=0)
-    else
-        U,S,V = ITensors.svd(ρ2,Linds,maxdim=maxdim)
+    if isnothing(truncidx)
+        truncidx = floor(Int, L/2)
     end
 
-    # Make the SVD channel 
-    if c1>1 && c2<L
-        ρ_targ = U*S*V # this is our target tensor 
-        ρ_targ = replaceprime(ρ_targ, 1 => 3, tags="Site")
-        ρ_targ = replaceprime(ρ_targ, 0 => 2, tags="Site")
+    # Take the reduced density matrix
+    ρtr = reduced_density_matrix(ρ, [truncidx, truncidx+1])
+    sinds = siteinds(ρtr)
+    sL = unique(noprime(sinds[1]))
+    sR = unique(noprime(sinds[2]))
+    Linds = uniqueinds(ρtr[1], ρtr[2])
+    @show linkdims(ρtr)
 
-        Φ = CPTP_approximation_JuMP(ρ2, ρ_targ) # find the nearest CPTP map
+    # This is the starting density matrix 
+    ρtr = (ρtr[1] * ρtr[2])
+
+    # Now create the target tesnor
+    ρ̃tr = copy(ρtr)
+    Ũ,S̃,Ṽ = ITensors.svd(ρ̃tr,Linds,maxdim=truncdim)
+    ρ̃tr = Ũ*S̃*Ṽ
+
+    # tie indices together
+    X = combiner(sL, sR)
+    X1 = combiner(prime(sL), prime(sR))
+    ρtr = ρtr*X*X1
+    ρ̃tr = ρ̃tr*X*X1
+
+    if inds(ρtr) != inds(ρ̃tr)
+        ρtr = permute(ρtr, inds(ρ̃tr))
     end
 
-    # Update the original MPO 
-    ρ̃[c1] = U
-    ρ̃[c2] = S*V
+    Φ = approximate_tsvd(array(ρtr), array(ρ̃tr)) # find the nearest CPTP map
+end
 
-    return ρ̃
+function frobenius_norm(A, B)
+    Δ = A - B
+    Δreal = real(Δ)
+    Δimag = imag(Δ)
+    Δnorm = sum(Δreal[i]^2 for i in CartesianIndices(Δreal)) +
+            sum(Δimag[i]^2 for i in CartesianIndices(Δimag))
+    return sqrt(Δnorm)
+end
+
+function approximate_tsvd(ρ, ρ̃; nkraus::Int=4)
+    # 3. Approximate truncated density matrix with quantum operation by finding optimal Kraus
+    #    operators using non-convex optimization (quartic objective with quadratic constraint)
+    #
+    #                                    min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
+    #                                    s.t.    ∑ᵢKᵢ†Kᵢ = I
+    
+    # This is the initial difference between ρ and ρ̃
+    initial_loss = (frobenius_norm(ρ, ρ̃))^2
+    
+    # Initialize the JuMP model 
+    model = Model(Ipopt.Optimizer)
+
+    ndims_out, ndims_out2 = size(ρ)
+    @assert ndims_out==ndims_out2
+    @assert size(ρ̃)==(ndims_out,ndims_out)
+
+    # a. Build Krauss operator variables
+    # complex array variables are not currently supported, so have to reshape
+    Ksdims = (ndims_out, ndims_out, nkraus)
+    # Optimizer needs help with starting from a feasible point, using Kᵢ = I
+    Ks = reshape([
+            @variable(model, set = ComplexPlane(), start = sqrt(1/nkraus)*I[i, j])
+            for (i, j, _) in Tuple.(CartesianIndices(Ksdims))
+        ], Ksdims)
+
+    # b. define Krauss operators contraint: ∑ᵢKᵢ†Kᵢ = I
+    @constraint(model, sum(K' * K for K in eachslice(Ks, dims=3)) .== I)
+
+    # c. Find the difference between the approximation and tsvd matrix and compute Frobenius norm
+    #                                    ∑ᵢKᵢρKᵢ† - ρ̃.
+    approx = @expression(model, sum(K * ρ * K' for K in eachslice(Ks, dims=3)))
+    diff = @expression(model, approx - ρ̃)
+
+    # d. Compute the Frobenius norm. This will have quartic terms, so we have to use NLexpression
+    # NLexpression does not support complex variables :(
+    diffreal = real(diff)
+    diffimag = imag(diff)
+    fnorm = @NLexpression(model,
+        sum(diffreal[i]^2 for i in CartesianIndices(diffreal))
+        +
+        sum(diffimag[i]^2 for i in CartesianIndices(diffimag))
+    )
+    @NLobjective(model, Min, fnorm)
+
+    # e. Let's optimize!
+    optimize!(model)
+
+    # 4. Process results
+    @show initial_loss
+    @show objective_value(model)
+    @show value.(Ks[1])
+    @show value.(Ks[2])
+    @show value.(Ks[3])
+    @show value.(Ks[4])
 end
 
 function initialize_channel(SInds; random_init=false)
@@ -146,10 +175,10 @@ function initialize_channel(SInds; random_init=false)
     σz = [1.0 0.0 
           0.0 -1.0]
 
-    Ids = sqrt(1-ε) * copy(Id)
-    σxs = sqrt(ε/3) * copy(σx)
-    σys = sqrt(ε/3) * copy(σy)
-    σzs = sqrt(ε/3) * copy(σz)
+    Ids = sqrt(1-ε) .* copy(Id)
+    σxs = sqrt(ε/3) .* copy(σx)
+    σys = sqrt(ε/3) .* copy(σy)
+    σzs = sqrt(ε/3) .* copy(σz)
 
     for _ in 2:length(SInds)
         # Build up the total operator 
@@ -177,260 +206,296 @@ function initialize_channel(SInds; random_init=false)
     return K, Kdag
 end
 
+function initialize_channel_identity(SInds; random_init=false, num_kraus::Int=4)
+    CS = combiner(SInds...) # make a combiner tensor for the inds
+    cS = combinedind(CS) # make a new label for the combined indices 
+
+    # Make the kraus operators
+    Id = Matrix(I, 2, 2)
+    Ids = sqrt(1/4) * copy(Id)
+
+    for _ in 2:length(SInds)
+        # Build up the total operator 
+        Ids = Ids ⊗ Id 
+    end
+
+    # Stack them together 
+    stacked = [collect(Ids) for _ in 1:num_kraus]
+    K_elems = cat(stacked..., dims=3)
+
+    if random_init
+        K_elems = rand(size(K_elems))
+    end
+
+    # Turn this into an ITensor with the appropriate indices 
+    sum_idx = Index(num_kraus, tags="Kraus")
+    KdagC = ITensor(K_elems, cS, prime(cS), sum_idx)
+    Kdag = KdagC * CS * prime(CS)
+    Kdag = prime(Kdag, 1, plev=1)
+    K = prime(dag(Kdag))
+    K = replaceprime(K, 1 => 0, tags="Kraus")
+
+    return K, Kdag
+end
+
 function get_siteinds(ρ::ITensor)
     return tag_and_plev(ρ, tag="Site", lev=0)
 end
 
-function check_isometry(K::ITensor, Kdag::ITensor)
-    @error "TODO"
-end
+# function check_isometry(K::ITensor, Kdag::ITensor)
+#     @error "TODO"
+# end
 
-function identity_operator(K::ITensor, Kdag::ITensor)
-    @error "TODO"
-end
+# function identity_operator(K::ITensor, Kdag::ITensor)
+#     @error "TODO"
+# end
 
-function get_all_indices(K::ITensor, Kdag::ITensor, ρ::ITensor, ρ̃::ITensor)
-    L1, R1, L3, R3, S = inds(K)
-    slink = taginds(K, "Kraus")[1]
-    @assert S==slink 
+# function get_all_indices(K::ITensor, Kdag::ITensor, ρ::ITensor, ρ̃::ITensor)
+#     L1, R1, L3, R3, S = inds(K)
+#     slink = taginds(K, "Kraus")[1]
+#     @assert S==slink 
 
-    L, R, L2, R2, S̃ = inds(Kdag)
-    @assert S̃==slink 
+#     L, R, L2, R2, S̃ = inds(Kdag)
+#     @assert S̃==slink 
 
-    lL, lR, L̃, R̃, L̃1, R̃1 = inds(ρ)
-    lLlink,lRlink = taginds(ρ, "Link")
-    @assert (lL==lLlink && lR==lRlink) || (lL==lRlink && lR==lLlink)
+#     lL, lR, L̃, R̃, L̃1, R̃1 = inds(ρ)
+#     lLlink,lRlink = taginds(ρ, "Link")
+#     @assert (lL==lLlink && lR==lRlink) || (lL==lRlink && lR==lLlink)
 
-    @assert L==L̃ && R==R̃ && L1==L̃1 && R1==R̃1 
+#     @assert L==L̃ && R==R̃ && L1==L̃1 && R1==R̃1 
 
-    if inds(ρ̃) != (lL, lR, L2, R2, L3, R3)
-        ρ̃ = permute(ρ̃, lL, lR, L2, R2, L3, R3)
-    end
+#     if inds(ρ̃) != (lL, lR, L2, R2, L3, R3)
+#         ρ̃ = permute(ρ̃, lL, lR, L2, R2, L3, R3)
+#     end
 
-    return K, Kdag, ρ, ρ̃, L, R, L1, R1, L2, R2, L3, R3, S, lL, lR
-end
+#     return K, Kdag, ρ, ρ̃, L, R, L1, R1, L2, R2, L3, R3, S, lL, lR
+# end
 
-function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
-    K,Kdag = initialize_channel(get_siteinds(ρ), random_init=false)
+# """
+# Maybe try implementing this: https://apps.dtic.mil/sti/pdfs/ADA528339.pdf
+# """
+# function CPTP_approximation_JuMP(ρ::ITensor, ρ̃::ITensor)
+#     K,Kdag = initialize_channel(get_siteinds(ρ), random_init=false)
+#     #K,Kdag = initialize_channel_identity(get_siteinds(ρ), random_init=false)
     
-    """
-    After processing...
-        K has indices L1, R1, L3, R3, S
-        Kdag has indices L, R, L2, R2, S 
-        ρ has indices lL, lR, L, R, L1, R1
-        ρ̃ has indices lL, lR, L2, R2, L3, R3
-        Id has indices L, R, L1, R1, L2, R2, L3, R3 
-    """
-    # Permute the tensors into standard form 
-    K, Kdag, ρ, ρ̃, L, R, L1, R1, L2, R2, L3, R3, S, lL, lR = get_all_indices(K,Kdag,ρ,ρ̃)
-    dS = ITensors.dim(S)
+#     """
+#     After processing...
+#         K has indices L1, R1, L3, R3, S
+#         Kdag has indices L, R, L2, R2, S 
+#         ρ has indices lL, lR, L, R, L1, R1
+#         ρ̃ has indices lL, lR, L2, R2, L3, R3
+#         Id has indices L, R, L1, R1, L2, R2, L3, R3 
+#     """
+#     # Permute the tensors into standard form 
+#     K, Kdag, ρ, ρ̃, L, R, L1, R1, L2, R2, L3, R3, S, lL, lR = get_all_indices(K,Kdag,ρ,ρ̃)
+#     dS = ITensors.dim(S)
 
-    ## COMBINING LEGS ## 
-    # These are the combiner tensors
-    X = combiner(L,R)
-    Y = combiner(L2,R2)
-    X1 = combiner(L1,R1)
-    Y1 = combiner(L3,R3)
-    B = combiner(lL,lR)
-    # These are the indices 
-    Xc = combinedind(X)
-    Yc = combinedind(Y)
-    X1c = combinedind(X1)
-    Y1c = combinedind(Y1)
-    Bc = combinedind(B)
-    # These are the dimensions of all the indices 
-    dX = ITensors.dim(Xc)
-    dY = ITensors.dim(Yc)
-    dX1 = ITensors.dim(X1c)
-    dY1 = ITensors.dim(Y1c)
-    dB = ITensors.dim(Bc)
+#     ## COMBINING LEGS ## 
+#     # These are the combiner tensors
+#     X = combiner(L,R)
+#     Y = combiner(L2,R2)
+#     X1 = combiner(L1,R1)
+#     Y1 = combiner(L3,R3)
+#     B = combiner(lL,lR)
+#     # These are the indices 
+#     Xc = combinedind(X)
+#     Yc = combinedind(Y)
+#     X1c = combinedind(X1)
+#     Y1c = combinedind(Y1)
+#     Bc = combinedind(B)
+#     # These are the dimensions of all the indices 
+#     dX = ITensors.dim(Xc)
+#     dY = ITensors.dim(Yc)
+#     dX1 = ITensors.dim(X1c)
+#     dY1 = ITensors.dim(Y1c)
+#     dB = ITensors.dim(Bc)
 
-    ## REFERENCE RESULTS ## 
-    Nρ = K*ρ*Kdag
-    if inds(Nρ) != (lL, lR, L2, R2, L3, R3)
-        Nρ = permute(Nρ, lL, lR, L2, R2, L3, R3)
-    end
-    initial_loss = (norm(Nρ - ρ̃))^2
+#     ## REFERENCE RESULTS ## 
+#     Nρ = K*ρ*Kdag
+#     if inds(Nρ) != (lL, lR, L2, R2, L3, R3)
+#         Nρ = permute(Nρ, lL, lR, L2, R2, L3, R3)
+#     end
+#     initial_loss = (norm(Nρ - ρ̃))^2
 
-    ## Combine the legs ## 
-    K = K*X1*Y1
-    Kdag = Kdag*X*Y 
-    ρ = ρ*B*X*X1
-    ρ̃ = ρ̃*B*Y*Y1
-    Id = delta(Xc,X1c)
-    Nρ = Nρ * B * Y * Y1 # for reference only 
+#     ## Combine the legs ## 
+#     K = K*X1*Y1
+#     Kdag = Kdag*X*Y 
+#     ρ = ρ*B*X*X1
+#     ρ̃ = ρ̃*B*Y*Y1
+#     Id = delta(Xc,X1c)
+#     Nρ = Nρ * B * Y * Y1 # for reference only 
 
-    # checking for isometry 
-    KdagK = Kdag*delta(Yc,Y1c)*K
-    @assert isapprox(KdagK, Id) 
+#     # checking for isometry 
+#     KdagK = Kdag*delta(Yc,Y1c)*K
+#     @show array(KdagK)
+#     @assert isapprox(KdagK, Id) 
     
-    #@assert array(Id)==array(KdagK)
+#     ## PERMUTE ALL THE INDICES TO MAKE SURE WE HAVE WHAT WE WANT ## 
+#     if inds(K) != (X1c, Y1c, S)
+#         K = permute(K, X1c, Y1c, S)
+#     end
 
-    ## PERMUTE ALL THE INDICES TO MAKE SURE WE HAVE WHAT WE WANT ## 
-    if inds(K) != (X1c, Y1c, S)
-        K = permute(K, X1c, Y1c, S)
-    end
+#     if inds(Kdag) != (Xc, Yc, S)
+#         Kdag = permute(Kdag, Xc, Yc, S)
+#     end
 
-    if inds(Kdag) != (Xc, Yc, S)
-        Kdag = permute(Kdag, Xc, Yc, S)
-    end
+#     if inds(ρ) != (Bc, Xc, X1c)
+#         ρ = permute(ρ, Bc, Xc, X1c)
+#     end
 
-    if inds(ρ) != (Bc, Xc, X1c)
-        ρ = permute(ρ, Bc, Xc, X1c)
-    end
+#     if inds(ρ̃) != (Bc, Yc, Y1c)
+#         ρ̃ = permute(ρ̃, Bc, Yc, Y1c)
+#     end
 
-    if inds(ρ̃) != (Bc, Yc, Y1c)
-        ρ̃ = permute(ρ̃, Bc, Yc, Y1c)
-    end
+#     if inds(Id) != (Xc, X1c)
+#         Id = permute(Id, Xc, X1c)
+#     end
 
-    if inds(Id) != (Xc, X1c)
-        Id = permute(Id, Xc, X1c)
-    end
+#     if inds(Nρ) != (Bc, Yc, Y1c)
+#         Nρ = permute(Bc, Yc, Y1c)
+#     end
 
-    if inds(Nρ) != (Bc, Yc, Y1c)
-        Nρ = permute(Bc, Yc, Y1c)
-    end
+#     ## EXTRACT THE TENSORS FROM THE ITENSOR OBJECTS ##
+#     K_arr = array(K) # dX1, dY1, dS
+#     K_arr_flat = reshape(K_arr, dX1*dY1*dS) # dX1*dY1*dS
+#     Kdag_arr = array(Kdag) # dX, dY, dS
+#     ρ_arr = array(ρ) # dB, dX, dX1
+#     ρ̃_arr = array(ρ̃) # dB, dY, dY1
+#     Id_arr = array(Id) # dX, dX1 
+#     Δ_arr = array(Nρ) - ρ̃_arr # dB, dY, dY1
+#     true_loss = (norm(ρ_arr-ρ̃_arr))^2
 
-    ## EXTRACT THE TENSORS FROM THE ITENSOR OBJECTS ##
-    K_arr = array(K) # dX1, dY1, dS
-    K_arr_flat = reshape(K_arr, dX1*dY1*dS) # dX1*dY1*dS
-    Kdag_arr = array(Kdag) # dX, dY, dS
-    ρ_arr = array(ρ) # dB, dX, dX1
-    ρ̃_arr = array(ρ̃) # dB, dY, dY1
-    Id_arr = array(Id) # dX, dX1 
-    Δ_arr = array(Nρ) - ρ̃_arr # dB, dY, dY1
-    true_loss = (norm(ρ_arr-ρ̃_arr))^2
+#     ## OPTIMIZATION ##
+#     # very relevant: https://github.com/jump-dev/JuMP.jl/issues/2060 
+#     model = Model(Ipopt.Optimizer) 
 
-    ## OPTIMIZATION ##
-    # very relevant: https://github.com/jump-dev/JuMP.jl/issues/2060 
-    model = Model(Ipopt.Optimizer) 
-
-    # Define K, the variable being optimized over 
-    # Initialize with the 'identity' version of K 
-    K = [@variable(model, set = ComplexPlane(), start=K_arr_flat[n]) for n in 1:dX1*dY1*dS] # dX*dY*dS 
-    K = reshape(K, dX1, dY1, dS) # now has shape dX1, dY1, dS
-    # try to initialize as Hermitian <-- DOES NOT WORK FOR SOME REASON ! Just implement as constraint? 
-    # K = [@variable(model, [1:dX1,1:dY1] in HermitianPSDCone()) for _ in 1:dS] # dX*dY*dS 
-    # K = cat(K..., dims=3)
+#     # Define K, the variable being optimized over 
+#     # Initialize with the 'identity' version of K 
+#     K = [@variable(model, set = ComplexPlane(), start=K_arr_flat[n]) for n in 1:dX1*dY1*dS] # dX*dY*dS 
+#     K = reshape(K, dX1, dY1, dS) # now has shape dX1, dY1, dS
     
-    # Make K†
-    Kdag = LinearAlgebra.conj(K) # has shape dX, dY, dS 
+#     # Make K†
+#     Kdag = LinearAlgebra.conj(K) # has shape dX, dY, dS 
 
-    ## CONSTRAINTS ##
-    num_isometry_constraints = 0
-    num_hermitian_constraints=0
-    # We are performing Kdag[x, y, s] * K[x1, y1, s] * δ[y, y1]
-    for x in 1:dX
-        for x1 in 1:dX1
+#     ## CONSTRAINTS ##
+#     num_isometry_constraints = 0
+#     num_hermitian_constraints = 0
+#     # We are performing Kdag[x, y, s] * K[x1, y1, s] * δ[y, y1]
+#     for x in 1:dX
+#         for x1 in 1:dX1
 
-            # Sum over the contracted indices (y, y1, s)
-            KdagK_elem = @expression(model, 0)
+#             # Sum over the contracted indices (y, y1, s)
+#             KdagK_elem = @expression(model, 0)
 
-            # debugging 
-            KdagK_elem_debug = 0
+#             # debugging 
+#             KdagK_elem_debug = 0
 
-            for y in 1:dY # Only need to do the y sum. The sum over y1 picks out all the y1==y terms 
-                for s in 1:dS # Do the sum over the Kraus index 
-                    inc = @expression(model, K[x1, y, s] * Kdag[x, y, s])  
-                    KdagK_elem = @expression(model, KdagK_elem + inc)
+#             for y in 1:dY # Only need to do the y sum. The sum over y1 picks out all the y1==y terms 
+#                 for s in 1:dS # Do the sum over the Kraus index 
+#                     inc = @expression(model, K[x1, y, s] * Kdag[x, y, s])  
+#                     KdagK_elem = @expression(model, KdagK_elem + inc)
 
-                    # Hermiticity constraint
-                    if x1<y
-                        if x==1 
-                            @constraint(model, K[x1, y, s]==conj(K[y, x1, s]))
-                            num_hermitian_constraints += 1
-                        end
-                    end
+#                     # Hermiticity constraint
+#                     if x1<y
+#                         if x==1 
+#                             @constraint(model, K[x1, y, s]==conj(K[y, x1, s]))
+#                             num_hermitian_constraints += 1
+#                         end
+#                     end
 
-                    # debugging 
-                    inc_debug = K_arr[x1, y, s] * Kdag_arr[x, y, s]
-                    KdagK_elem_debug += inc_debug
-                end
-            end
+#                     # debugging 
+#                     inc_debug = K_arr[x1, y, s] * Kdag_arr[x, y, s]
+#                     KdagK_elem_debug += inc_debug
+#                 end
+#             end
 
-            # we add the constraints here 
-            Id_elem = Id_arr[x, x1]
-            @constraint(model, KdagK_elem==Id_elem)
+#             # we add the constraints here 
+#             Id_elem = Id_arr[x, x1]
+#             @constraint(model, KdagK_elem==Id_elem)
 
-            # debugging 
-            @assert isapprox(Id_elem, KdagK_elem_debug, atol=1e-6) 
+#             # debugging 
+#             @assert isapprox(Id_elem, KdagK_elem_debug, atol=1e-6) 
             
-            # count the number of constraints 
-            num_isometry_constraints += 1
+#             # count the number of constraints 
+#             num_isometry_constraints += 1
 
-        end
-    end
+#         end
+#     end
 
-    ## OBJECTIVE ## 
-    @NLexpression(model, loss, 0)
+#     ## OBJECTIVE ## 
+#     @NLexpression(model, loss, 0)
 
-    # debugging 
-    loss_debug = 0 
-    numsquares = 0 
+#     # debugging 
+#     loss_debug = 0 
+#     numsquares = 0 
 
-    # We are computing K[x1, y1, s] * ρ[b, x, x1] * Kdag[x, y, s]
-    for y in 1:dY # Y, Y1, and B are the free indices 
-        for y1 in 1:dY1
-            for b in 1:dB
+#     # We are computing K[x1, y1, s] * ρ[b, x, x1] * Kdag[x, y, s]
+#     for y in 1:dY # Y, Y1, and B are the free indices 
+#         for y1 in 1:dY1
+#             for b in 1:dB
 
-                # Now sum over the contracted indices 
-                KρKdag_elem = @expression(model, 0)
+#                 # Now sum over the contracted indices 
+#                 KρKdag_elem = @expression(model, 0)
 
-                # for debugging 
-                KρKdag_elem_debug = 0
+#                 # for debugging 
+#                 KρKdag_elem_debug = 0
 
-                for x in 1:dX
-                    for x1 in 1:dX1
-                        for s in 1:dS # Kraus index 
-                            inc = @expression(model, K[x1, y1, s] * ρ_arr[b, x, x1] * Kdag[x, y, s])
-                            KρKdag_elem = @expression(model, KρKdag_elem + inc)
+#                 for x in 1:dX
+#                     for x1 in 1:dX1
+#                         for s in 1:dS # Kraus index 
+#                             inc = @expression(model, K[x1, y1, s] * ρ_arr[b, x, x1] * Kdag[x, y, s])
+#                             KρKdag_elem = @expression(model, KρKdag_elem + inc)
 
-                            # debugging 
-                            inc_debug = K_arr[x1, y1, s] * ρ_arr[b, x, x1] * Kdag_arr[x, y, s]
-                            KρKdag_elem_debug += inc_debug 
-                        end
-                    end
-                end
+#                             # debugging 
+#                             inc_debug = K_arr[x1, y1, s] * ρ_arr[b, x, x1] * Kdag_arr[x, y, s]
+#                             KρKdag_elem_debug += inc_debug 
+#                         end
+#                     end
+#                 end
 
-                # Now take the difference 
-                Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
-                Δreal = real(Δ)
-                Δcomp = imag(Δ)
-                Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
-                loss = @NLexpression(model, loss+Δsquared)
+#                 # Now take the difference 
+#                 Δ = KρKdag_elem - ρ̃_arr[b, y, y1]
+#                 Δreal = real(Δ)
+#                 Δcomp = imag(Δ)
+#                 Δsquared = @NLexpression(model, Δreal^2 + Δcomp^2)
+#                 loss = @NLexpression(model, loss+Δsquared)
 
-                # debugging 
-                Δ_debug = KρKdag_elem_debug - ρ̃_arr[b, y, y1]
-                Δ_elem = Δ_arr[b, y, y1]
-                @assert isapprox(Δ_debug, Δ_elem, atol=1e-6)
-                Δreal_debug = real(Δ_debug)
-                Δcomp_debug = imag(Δ_debug)
-                Δsquared_debug = Δreal_debug^2 + Δcomp_debug^2
-                loss_debug += Δsquared_debug
+#                 # debugging 
+#                 Δ_debug = KρKdag_elem_debug - ρ̃_arr[b, y, y1]
+#                 Δ_elem = Δ_arr[b, y, y1]
+#                 @assert isapprox(Δ_debug, Δ_elem, atol=1e-6)
+#                 Δreal_debug = real(Δ_debug)
+#                 Δcomp_debug = imag(Δ_debug)
+#                 Δsquared_debug = Δreal_debug^2 + Δcomp_debug^2
+#                 loss_debug += Δsquared_debug
 
-                # count the number of terms we are summing together 
-                numsquares += 1
+#                 # count the number of terms we are summing together 
+#                 numsquares += 1
 
-            end
-        end
-    end
+#             end
+#         end
+#     end
 
-    @assert isapprox(loss_debug, initial_loss, atol=1e-6) 
+#     @assert isapprox(loss_debug, initial_loss, atol=1e-6) 
 
-    @NLobjective(model, Min, loss)
-    optimize!(model)
+#     @NLobjective(model, Min, loss)
+#     optimize!(model)
 
-    println("RESULTS:")
-    @show initial_loss
-    @show true_loss  
-    @show objective_value(model)
-    Ksoln = value.(K)
+#     println("RESULTS:")
+#     @show initial_loss
+#     @show true_loss  
+#     @show objective_value(model)
+#     Ksoln = value.(K)
 
-    @show Ksoln[1:10]
-    @show K_arr_flat[1:10]
+#     @show Ksoln[:,:,1]
+#     @show K_arr[:,:,1]
+#     @show Ksoln[:,:,2]
+#     @show K_arr[:,:,2]
+#     @show Ksoln[:,:,3]
+#     @show K_arr[:,:,3]
+#     @show Ksoln[:,:,4]
+#     @show K_arr[:,:,4]
 
-    println("END RESULTS")
-    println("")
-end
-
-
+#     println("END RESULTS")
+#     println("")
+# end
