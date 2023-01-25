@@ -4,19 +4,13 @@ include("utilities.jl")
 using ITensors
 using LinearAlgebra
 using Kronecker
-using NLsolve
-using Einsum 
-using Convex, SCS # convex solvers
-using ADNLPModels
-using NLPModelsIpopt
-using JuMP 
-using Ipopt
+using JuMP, Ipopt
 
 
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; random_type="Haar", ε=0.05, benchmark=false, maxdim=nothing)
+function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; random_type="Haar", ε=0.05, maxdim=nothing)
     L = length(ψ0)
     if isnothing(maxdim)
         println("No truncation")
@@ -28,6 +22,8 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
     sites = siteinds(ψ0)
     
     # Iterate over all time steps 
+    all_Ks = []
+    all_loss_hist = []
     for t in 1:T
         print(t,"-")
 
@@ -47,16 +43,14 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
             ρ = apply_onesite_gate(ρ, n)
         end
 
-        truncation_quantum_channel(ρ, truncdim) 
+        Ks, loss_hist = truncation_quantum_channel(ρ, truncdim) 
+        push!(all_Ks, Ks)
+        push!(all_loss_hist, loss_hist)
     end
 
     @show tr(ρ)
 
-    if benchmark
-        return ρ, state_entanglement, operator_entanglement, trace 
-    end
-
-    return ρ
+    return ρ, all_Ks, all_loss_hist
 end
 
 function truncation_quantum_channel(ρ::MPO, truncdim::Int; truncidx::Union{Int,Nothing}=nothing)
@@ -93,7 +87,10 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; truncidx::Union{Int,
         ρtr = permute(ρtr, inds(ρ̃tr))
     end
 
-    Φ = approximate_tsvd(array(ρtr), array(ρ̃tr)) # find the nearest CPTP map
+    # find the nearest CPTP map
+    Ks, loss_hist = approximate_tsvd(array(ρtr), array(ρ̃tr)) 
+    
+    return Ks, loss_hist 
 end
 
 function frobenius_norm(A, B)
@@ -106,6 +103,7 @@ function frobenius_norm(A, B)
 end
 
 function approximate_tsvd(ρ, ρ̃; nkraus::Int=4)
+
     # 3. Approximate truncated density matrix with quantum operation by finding optimal Kraus
     #    operators using non-convex optimization (quartic objective with quadratic constraint)
     #
@@ -150,16 +148,30 @@ function approximate_tsvd(ρ, ρ̃; nkraus::Int=4)
     )
     @NLobjective(model, Min, fnorm)
 
+    loss_hist = []
+
+    # callback function for recording results 
+    function my_callback(alg_mod::Cint,iter_count::Cint,obj_value::Float64,
+        inf_pr::Float64,inf_du::Float64,mu::Float64,d_norm::Float64,
+        regularization_size::Float64,alpha_du::Float64,
+        alpha_pr::Float64,ls_trials::Cint)
+
+        push!(loss_hist, obj_value)
+        return true 
+    end
+
+    # set callback function for this model 
+    MOI.set(model, Ipopt.CallbackFunction(), my_callback)
+
     # e. Let's optimize!
     optimize!(model)
 
     # 4. Process results
     @show initial_loss
     @show objective_value(model)
-    @show value.(Ks[1])
-    @show value.(Ks[2])
-    @show value.(Ks[3])
-    @show value.(Ks[4])
+
+    # return results
+    return value.(Ks), loss_hist 
 end
 
 function initialize_channel(SInds; random_init=false)

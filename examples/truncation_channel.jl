@@ -17,7 +17,13 @@ truncdim = 1
 ψ0 = initialize_wavefunction(L=L)
 
 # Apply the circuit 
-ρ, SR2, SvN_op, t  = apply_circuit_truncation_channel(ψ0, T, truncdim, ε=ε, benchmark=true, maxdim=maxdim)
+ρ, all_Ks, all_loss_hist = apply_circuit_truncation_channel(ψ0, T, truncdim, ε=ε, maxdim=maxdim)
 
-## We are not computing the right pseudoinverse! it should be a pseudoinverse
-# for every value of the input and output link indices 
+p = plot()
+cmap = cgrad(:acton, length(all_loss_hist), categorical = true)
+for (i,lh) in enumerate(all_loss_hist)
+    plot!(p, lh, c=cmap[i], label="t=$(i)")
+end
+title!(p, "Training loss")
+xlabel!(p, "Iteration")
+plot(p)
