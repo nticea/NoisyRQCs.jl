@@ -47,10 +47,8 @@ function domcol(w; n=10)
 end
 
 idx = 10
+s = 1
 Ks = all_Ks[idx]
-hms = []
-for s in size(Ks)[3]
-    hm = heatmap((real.(Ks[:,:,s])).^2, c=:bluesreds, clim=(0,1), aspect_ratio=:equal, axis=false, yflip=true)
-    push!(hms, hm)
-end
-plot(hms..., layout=Plots.grid(1,4, widths=(1/4,1/4,1/4,1/4)), size=(2000,500))
+Ki = Ks[:,:,s]
+domcol(Ki)
+img = domcol(Ki; n=13)

@@ -1,5 +1,6 @@
 include("circuit.jl")
 include("utilities.jl")
+include("approxchannel.jl")
 
 using ITensors
 using LinearAlgebra
@@ -67,7 +68,6 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=fal
     sL = unique(noprime(sinds[1]))
     sR = unique(noprime(sinds[2]))
     Linds = uniqueinds(rdm[1], rdm[2])
-    @show linkdims(rdm)
 
     # This is the starting density matrix
     ρtr = (rdm[1] * rdm[2])
@@ -80,7 +80,6 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=fal
         ρtr = replaceprime(ρtr, 3 => 1)
         ρtr = replaceprime(ρtr, 2 => 0)
     end
-    @show inds(ρtr)
 
     # Now create the target tensor
     Ũ, S̃, Ṽ = ITensors.svd(ρtr, Linds, maxdim=truncdim)

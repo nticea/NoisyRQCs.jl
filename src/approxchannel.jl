@@ -3,7 +3,7 @@ using LinearAlgebra
 using TSVD
 using JuMP
 using Ipopt
-using Kronecker
+using Kronecker: ⊗
 
 """
 Reshape MPO into matrix
