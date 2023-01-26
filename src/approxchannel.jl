@@ -32,7 +32,7 @@ operators.
 min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
 s.t.    ∑ᵢKᵢ†Kᵢ = I
 """
-function approxquantumchannel(ρ̃, ρ, nkraus=nothing)
+function approxquantumchannel(ρ, ρ̃, nkraus=nothing)
     @assert length(size(ρ)) == 2 "ρ must be a 2D matrix"
     @assert size(ρ̃) == size(ρ) "Dimensions of ρ and ρ̃ must match"
     ndim = first(size(ρ))

@@ -28,7 +28,7 @@ NDTensors.truncate!(trho, maxdim=truncatedbonddim)
 # 3. Find approximate quantum channel
 ρ = Matrix(rho)
 ρ̃ = Matrix(trho)
-Ks, iterdata, model = approxquantumchannel(ρ̃, ρ)
+Ks, iterdata, model = approxquantumchannel(ρ, ρ̃)
 
 initialobjvalue = sum((ρ - ρ̃) .^ 2)
 @show initialobjvalue
