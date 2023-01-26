@@ -128,7 +128,7 @@ function partial_trace(ρ::MPO, indslist::Vector{Int}, side::String)
         @error side*" is not recognized"
     end
 
-    orthogonalize!(ρ, border_idx)
+    #orthogonalize!(ρ, border_idx)
 
     # trace out the indices in indslist
     for i in indslist

@@ -43,7 +43,7 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
             ρ = apply_onesite_gate(ρ, n)
         end
 
-        Ks, loss_hist = truncation_quantum_channel(ρ, truncdim) 
+        Ks, loss_hist = truncation_quantum_channel(ρ, truncdim, apply_gate=true) 
         push!(all_Ks, Ks)
         push!(all_loss_hist, loss_hist)
     end
@@ -53,7 +53,7 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
     return ρ, all_Ks, all_loss_hist
 end
 
-function truncation_quantum_channel(ρ::MPO, truncdim::Int; truncidx::Union{Int,Nothing}=nothing)
+function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=false, truncidx::Union{Int,Nothing}=nothing)
     ρ = copy(ρ)
     L = length(ρ)
 
@@ -62,19 +62,28 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; truncidx::Union{Int,
     end
 
     # Take the reduced density matrix
-    ρtr = reduced_density_matrix(ρ, [truncidx, truncidx+1])
-    sinds = siteinds(ρtr)
+    rdm = reduced_density_matrix(ρ, [truncidx, truncidx+1])
+    sinds = siteinds(rdm)
     sL = unique(noprime(sinds[1]))
     sR = unique(noprime(sinds[2]))
-    Linds = uniqueinds(ρtr[1], ρtr[2])
-    @show linkdims(ρtr)
+    Linds = uniqueinds(rdm[1], rdm[2])
+    @show linkdims(rdm)
 
     # This is the starting density matrix 
-    ρtr = (ρtr[1] * ρtr[2])
+    ρtr = (rdm[1] * rdm[2])
 
-    # Now create the target tesnor
-    ρ̃tr = copy(ρtr)
-    Ũ,S̃,Ṽ = ITensors.svd(ρ̃tr,Linds,maxdim=truncdim)
+    if apply_gate
+        println("Applying gate")
+        g = make_unitary_gate(sL, sR, "Haar")
+        ρtr *= g
+        # Lower the prime level by 1 to get back to what we originally had 
+        ρtr = replaceprime(ρtr, 3 => 1)
+        ρtr = replaceprime(ρtr, 2 => 0)
+    end
+    @show inds(ρtr)
+
+    # Now create the target tensor
+    Ũ,S̃,Ṽ = ITensors.svd(ρtr,Linds,maxdim=truncdim)
     ρ̃tr = Ũ*S̃*Ṽ
 
     # tie indices together

@@ -4,6 +4,9 @@ Pkg.activate(joinpath(@__DIR__,".."))
 include("../src/lagrange.jl")
 include("../src/utilities.jl")
 
+using Plots
+using Images, ImageTransformations
+
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
@@ -22,8 +25,32 @@ truncdim = 1
 p = plot()
 cmap = cgrad(:acton, length(all_loss_hist), categorical = true)
 for (i,lh) in enumerate(all_loss_hist)
-    plot!(p, lh, c=cmap[i], label="t=$(i)")
+    plot!(p, lh, c=cmap[i], legend = false)
 end
 title!(p, "Training loss")
 xlabel!(p, "Iteration")
 plot(p)
+
+function perfract(x, t, m=0.7, M=1)
+    x = x / t
+    return m + (M-m) * (x-floor(x))
+end 
+
+function domcol(w; n=10)
+    logm = log.(abs.(w)) # for lines of constant modulus
+    H = angle.(w)*180/π #compute argument of  w within interval [-180, 180], iei the Hue
+
+    V = perfract.(logm, 2π/n) # lines of constant log-modulus
+    arr = permutedims(cat(H, ones(size(H)), V, dims=3), [3,1,2]) #HSV-array
+
+    return RGB.(colorview(HSV, arr[:, end:-1:1,:]))
+end
+
+idx = 10
+Ks = all_Ks[idx]
+hms = []
+for s in size(Ks)[3]
+    hm = heatmap((real.(Ks[:,:,s])).^2, c=:bluesreds, clim=(0,1), aspect_ratio=:equal, axis=false, yflip=true)
+    push!(hms, hm)
+end
+plot(hms..., layout=Plots.grid(1,4, widths=(1/4,1/4,1/4,1/4)), size=(2000,500))
