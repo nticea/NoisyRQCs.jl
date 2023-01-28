@@ -22,7 +22,7 @@ end
 Computes matrix of pauli decomposition coefficients of tensor on given indices and their primes
 C_i = 1/n^2 Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
 """
-function getpaulicoeffs(K, sites, psites)
+function paulidecomp(K, sites, psites)
     # Pauli operators
     Id = [1.0 0.0; 0.0 1.0]
     σx = [0.0 1.0; 1.0 0.0]
@@ -31,17 +31,18 @@ function getpaulicoeffs(K, sites, psites)
     paulis = [Id, σx, σy, σz]
 
     # Build pauli itensors for each site
-    sitepaulis = [
+    sitebases = [
         [ITensor(pauli, sites[i], psites[i]) for pauli in paulis]
         for i in eachindex(sites)
     ]
 
     # Build tensor products of all combinations of paulis across sites
-    multisitepaulis = [*(ops...) for ops in Iterators.product(sitepaulis...)]
+    basis = [*(ops...) for ops in Iterators.product(sitebases...)]
 
-    # Compute pauli decomposition coefficients: C_i = 1/n^2 Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
-    # TODO: compute normalization for general number of sites, currently hardcoded for 2 sites
-    Cs = 1 / 4 .* Ref(K) .* multisitepaulis
+    # Compute pauli decomposition coefficients: C_i = 1/2^n Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
+    # where n is the number of sites.
+    nsites = length(sites)
+    Cs = (1 / 2^nsites) .* Ref(K) .* basis
 
     return Cs, multisitepaulis
 end
