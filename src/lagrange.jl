@@ -96,7 +96,8 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=fal
     end
 
     # find the nearest CPTP map
-    Ks, iterdata = approxquantumchannel(array(ρtr), array(ρ̃tr))
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr))
+    # objective value is the 3rd entry
     loss_hist = map(x -> x[3], iterdata)
 
     return Ks, loss_hist
