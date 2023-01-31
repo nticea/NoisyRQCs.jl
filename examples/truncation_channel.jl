@@ -1,6 +1,6 @@
 ## IMPORTS ##
 using Pkg
-Pkg.activate(joinpath(@__DIR__,".."))
+Pkg.activate(joinpath(@__DIR__, ".."))
 include("../src/lagrange.jl")
 include("../src/utilities.jl")
 
@@ -23,9 +23,9 @@ truncdim = 1
 ρ, all_Ks, all_loss_hist = apply_circuit_truncation_channel(ψ0, T, truncdim, ε=ε, maxdim=maxdim)
 
 p = plot()
-cmap = cgrad(:acton, length(all_loss_hist), categorical = true)
-for (i,lh) in enumerate(all_loss_hist)
-    plot!(p, lh, c=cmap[i], legend = false)
+cmap = cgrad(:acton, length(all_loss_hist), categorical=true)
+for (i, lh) in enumerate(all_loss_hist)
+    plot!(p, lh, c=cmap[i], legend=false)
 end
 title!(p, "Training loss")
 xlabel!(p, "Iteration")
@@ -33,22 +33,22 @@ plot(p)
 
 function perfract(x, t, m=0.7, M=1)
     x = x / t
-    return m + (M-m) * (x-floor(x))
-end 
+    return m + (M - m) * (x - floor(x))
+end
 
 function domcol(w; n=10)
     logm = log.(abs.(w)) # for lines of constant modulus
-    H = angle.(w)*180/π #compute argument of  w within interval [-180, 180], iei the Hue
+    H = angle.(w) * 180 / π #compute argument of  w within interval [-180, 180], iei the Hue
 
-    V = perfract.(logm, 2π/n) # lines of constant log-modulus
-    arr = permutedims(cat(H, ones(size(H)), V, dims=3), [3,1,2]) #HSV-array
+    V = perfract.(logm, 2π / n) # lines of constant log-modulus
+    arr = permutedims(cat(H, ones(size(H)), V, dims=3), [3, 1, 2]) #HSV-array
 
-    return RGB.(colorview(HSV, arr[:, end:-1:1,:]))
+    return RGB.(colorview(HSV, arr[:, end:-1:1, :]))
 end
 
 idx = 10
 s = 1
 Ks = all_Ks[idx]
-Ki = Ks[:,:,s]
+Ki = Ks[:, :, s]
 domcol(Ki)
 img = domcol(Ki; n=13)
