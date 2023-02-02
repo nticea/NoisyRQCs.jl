@@ -6,30 +6,6 @@ include("utilities.jl")
 include("circuit_elements.jl")
 
 """
-Make an entire layer of randomly-drawn gates. Alternate odd and even sites per time step 
-"""
-function unitary_layer(sites, t::Int, random_type::String)
-    # Alternate sites on odd and even layers 
-    if isodd(t)
-        startidx = 1
-        endidx = length(sites)-1
-    else
-        startidx = 2
-        endidx = length(sites)
-    end
-
-    # Make a vector of gates to be applied at a time step t 
-    gates = ITensor[]
-    for l in startidx:2:endidx
-        # Draw a random unitary
-        randU = make_unitary_gate(sites[l], sites[l+1], random_type)
-        push!(gates, randU)
-    end
-
-    return gates 
-end
-
-"""
 Make a layer of noise gates. Act on each site with this gateset between unitary evolution 
 """
 function noise_layer(sites, ε::Real)
@@ -37,7 +13,7 @@ function noise_layer(sites, ε::Real)
     for s in sites
         push!(gates, make_kraus_gate(s, ε))
     end
-    return gates 
+    return gates
 end
 
 """

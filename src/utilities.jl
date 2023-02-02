@@ -1,22 +1,22 @@
 using ITensors
-using Plots 
-using StatsBase 
+using Plots
+using StatsBase
 using CurveFit
 using ITensors: linkinds
 import Base.isapprox
 
-function initialize_wavefunction(;L::Int)
+function initialize_wavefunction(; L::Int)
     @assert isodd(L) "L must be odd"
     sites = siteinds("Qubit", L)
-    state_arr = ["0" for l=1:L]
-    productMPS(sites,state_arr) 
+    state_arr = ["0" for l = 1:L]
+    productMPS(sites, state_arr)
 end
 
 """
 Helper function to initialize a density matrix from a wavefunction 
 """
 function density_matrix(ψ::MPS)
-    sites = siteinds(ψ)
+    sites = physical_indices(ψ)
     ψdag = dag(prime(ψ, sites))
     prime!(ψdag, "Link")
     return outer(ψ, ψdag)
@@ -24,23 +24,23 @@ end
 
 function entanglement_entropy(ψ::MPS; b=nothing)
     if isnothing(b)
-        b = floor(Int, length(ψ)/2)
+        b = floor(Int, length(ψ) / 2)
     end
     orthogonalize!(ψ, b)
-    U,S,V = svd(ψ[b], (linkind(ψ, b-1), siteind(ψ,b)))
+    U, S, V = svd(ψ[b], (linkind(ψ, b - 1), siteind(ψ, b)))
     SvN = 0.0
-    for n=1:ITensors.dim(S, 1)
-        p = S[n,n]^2
+    for n = 1:ITensors.dim(S, 1)
+        p = S[n, n]^2
         SvN -= p * log(p)
     end
-    return SvN 
+    return SvN
 end
 
 function second_Renyi_entropy(ρ)
     return -log(tr(apply(ρ, ρ)))
 end
 
-findnearest(A,x) = argmin(abs.(A .- x))
+findnearest(A, x) = argmin(abs.(A .- x))
 
 """
 physical_indices(ψ::MPS, idxlist::Vector{Int}, tag::String)
@@ -60,14 +60,14 @@ function physical_indices(ψ::ITensor; tag::String="Site")
 end
 
 function maxlinkdim(ρ::MPO)
-    Lmid = floor(Int, length(ρ)/2)
+    Lmid = floor(Int, length(ρ) / 2)
     return ITensors.dim(linkind(ρ, Lmid))
 end
 
 function maxlinkdim(ψ::MPS)
-    Lmid = floor(Int, length(ψ)/2)
+    Lmid = floor(Int, length(ψ) / 2)
     return ITensors.dim(linkind(ψ, Lmid))
-end 
+end
 
 # here we are KEEPING the indices in indslist 
 function reduced_density_matrix(ρ::MPO, indslist::Vector{Int})
@@ -81,7 +81,7 @@ function reduced_density_matrix(ρ::MPO, indslist::Vector{Int})
     if length(linds) > 0
         ρ = partial_trace(ρ, linds, "left")
     end
-    
+
     # now trace out the indices on the RHS 
     rinds = collect(indslist[end]+1:L) .- length(linds)
     if length(rinds) > 0
@@ -96,19 +96,19 @@ function partial_trace(ρ::MPO, indslist::Vector{Int}, side::String)
     ρ = copy(ρ)
     s = physical_indices(ρ) # these are the physical sites 
 
-    if side=="left"
-        border_idx = indslist[end]+1
-    elseif side=="right"
-        border_idx = indslist[begin]-1
+    if side == "left"
+        border_idx = indslist[end] + 1
+    elseif side == "right"
+        border_idx = indslist[begin] - 1
     else
-        @error side*" is not recognized"
+        @error side * " is not recognized"
     end
 
     #orthogonalize!(ρ, border_idx)
 
     # trace out the indices in indslist
     for i in indslist
-        ρ[i] = ρ[i]*delta(s[i],prime(s[i]))
+        ρ[i] = ρ[i] * delta(s[i], prime(s[i]))
     end
 
     # contract the indices in indslist
@@ -118,24 +118,24 @@ function partial_trace(ρ::MPO, indslist::Vector{Int}, side::String)
     end
 
     # mutliply this into the remaining ρ
-    ρ[border_idx] *= L 
+    ρ[border_idx] *= L
 
     to_keep = setdiff(collect(1:length(ρ)), indslist)
     ρ_new = MPO(ρ[to_keep])
 
-    return ρ_new 
+    return ρ_new
 end
 
 function get_D(ρ::MPO)
     L = length(ρ)
-    d = ITensors.dim(siteind(ρ,1))
+    d = ITensors.dim(siteind(ρ, 1))
     D = d^L
-    return D 
+    return D
 end
 
 function combine_indices(ρ::MPO)
     ρ = copy(ρ)
-    orthogonalize!(ρ,1)
+    orthogonalize!(ρ, 1)
     # Combine the primed and unprimed indices at each site to create a super MPS 
     sites = siteinds(ρ)
     for i in 1:length(ρ)
@@ -163,8 +163,12 @@ function physical_indices(ψ::Union{MPS,MPO}; tag::String="Site")
     [getfirst(x -> hastags(x, tag), inds(ψs)) for ψs in ψ]
 end
 
+function link_indices(ψ::Union{MPS,MPO}; tag::String="Link")
+    [getfirst(x -> hastags(x, tag), inds(ψs)) for ψs in ψ]
+end
+
 function get_plev_inds(T::ITensor, lev::Int)
-    inds(T)[findall(x -> plev(x)==lev, inds(T))]
+    inds(T)[findall(x -> plev(x) == lev, inds(T))]
 end
 
 function primed_inds(T::ITensor)
@@ -181,7 +185,7 @@ end
 
 function tag_and_plev(T::ITensor; tag::String, lev::Int)
     tinds = taginds(T, tag)
-    tinds[findall(x -> plev(x)==lev, tinds)]
+    tinds[findall(x -> plev(x) == lev, tinds)]
 end
 
 function linkindT(T::ITensor)
@@ -202,10 +206,10 @@ function isapprox(T1::ITensor, T2::ITensor; atol=1e-6)
     T1_arr = [array(T1)...]
     T2_arr = [array(T2)...]
 
-    for (t1,t2) in zip(T1_arr,T2_arr)
+    for (t1, t2) in zip(T1_arr, T2_arr)
         @assert isapprox.(t1, t2, atol=atol)
     end
-    return true 
+    return true
 end
 
 function save_structs(struc, path::String)
@@ -213,7 +217,7 @@ function save_structs(struc, path::String)
         string(arg)
     end
     fnames = fieldnames(typeof(struc))
-    for fn in fnames 
+    for fn in fnames
         n = Name(fn)
         d = getfield(struc, fn)
 
@@ -224,25 +228,25 @@ function save_structs(struc, path::String)
                     delete_object(file, n)
                     write(file, n, d)
                 else
-                    write(file, n, d) 
+                    write(file, n, d)
                 end
             end
         else # If the file does not exist, create it 
             h5open(path, "w") do file
-                write(file, n, d) 
+                write(file, n, d)
             end
         end
     end
 end
 
 function load_results(loadpath::String; load_state=false)
-    f = h5open(loadpath,"r")
+    f = h5open(loadpath, "r")
     if load_state
         ρ = read(f, "ρ", MPO)
     else
-        ρ = 0 
+        ρ = 0
     end
     d = read(f)
-    return Results(d["L"], d["T"], ρ, d["bitdist"], d["state_entropy"], 
-            d["operator_entanglement"], d["trace"])
+    return Results(d["L"], d["T"], ρ, d["bitdist"], d["state_entropy"],
+        d["operator_entanglement"], d["trace"])
 end
