@@ -210,7 +210,7 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         end
 
         # Apply the noise layer 
-        ψ = apply_noise_mpdo(ψ, Ks)
+        #ψ = apply_noise_mpdo(ψ, Ks)
 
         # Perform a canonicalization from L → R 
 
