@@ -25,6 +25,8 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
     # Iterate over all time steps
     all_Ks = []
     all_loss_hist = []
+    all_optloss = []
+    all_initloss = []
     for t in 1:T
         print(t, "-")
 
@@ -44,17 +46,85 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
             ρ = apply_onesite_gate(ρ, n)
         end
 
-        Ks, loss_hist = truncation_quantum_channel(ρ, truncdim, apply_gate=true)
+        # Perform the optimization 
+        Ks, optloss, initloss, loss_hist = truncation_quantum_channel(ρ, truncdim, apply_gate=false)
+
+        # record the data 
         push!(all_Ks, Ks)
         push!(all_loss_hist, loss_hist)
+        push!(all_optloss, optloss)
+        push!(all_initloss, initloss)
     end
 
     @show tr(ρ)
 
-    return ρ, all_Ks, all_loss_hist
+    return ρ, all_Ks, all_optloss, all_initloss, all_loss_hist
 end
 
 function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=false, truncidx::Union{Int,Nothing}=nothing)
+    ρ = copy(ρ)
+    L = length(ρ)
+
+    if isnothing(truncidx)
+        truncidx = floor(Int, L / 2)
+    end
+    sites = physical_indices(ρ)
+    sL = noprime(sites[truncidx])
+    sR = noprime(sites[truncidx+1])
+
+    # Orthogonalize the MPS around this site 
+    orthogonalize!(ρ, truncidx)
+    @show linkdim(ρ, truncidx)
+
+    ρ_ij = ρ[truncidx] * ρ[truncidx+1] # this is our original tensor
+    if apply_gate
+        println("Applying gate")
+        g = make_unitary_gate(sL, sR, "Haar")
+        ρ_ij *= g
+        # Lower the prime level by 1 to get back to what we originally had
+        ρ_ij = replaceprime(ρ_ij, 3 => 1)
+        ρ_ij = replaceprime(ρ_ij, 2 => 0)
+    end
+
+    # SVD the resulting tensor 
+    inds3 = uniqueinds(ρ[truncidx], ρ[truncidx+1])
+    U, S, V = ITensors.svd(ρ_ij, inds3, maxdim=truncdim, lefttags="Link,l=$(truncidx-1)", righttags="Link,l=$(truncidx+1)")
+
+    # Create the target tensor 
+    ρ̃_ij = U * S * V
+
+    ## Tie the indices together and make sure all the indices are the same ##
+
+    # Extract the link indices 
+    lL = taginds(ρ_ij, "Link,l=$(truncidx-1)")
+    rL = taginds(ρ_ij, "Link,l=$(truncidx+1)")
+    @assert length(lL) > 0 && length(rL) > 0
+
+    # These combiners will tie the indices together 
+    cL = combiner(lL, rL)
+    cX = combiner(sL, sR)
+    cX1 = combiner(prime(sL), prime(sR))
+    iL = combinedind(cL)
+    iX = combinedind(cX)
+    iX1 = combinedind(cX1)
+
+    # apply the combiners 
+    ρ_ij = ρ_ij * cL * cX * cX1
+    ρ̃_ij = ρ̃_ij * cL * cX * cX1
+
+    # permute the indices 
+    ρ_ij = permute(ρ_ij, iX, iX1, iL)
+    ρ̃_ij = permute(ρ̃_ij, iX, iX1, iL)
+
+    # find the nearest CPTP map
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρ_ij), array(ρ̃_ij), nkraus=4)
+    # objective value is the 3rd entry
+    loss_hist = map(x -> x[3], iterdata)
+
+    return Ks, optloss, initloss, loss_hist
+end
+
+function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int; apply_gate::Bool=false, truncidx::Union{Int,Nothing}=nothing)
     ρ = copy(ρ)
     L = length(ρ)
 
@@ -68,6 +138,8 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=fal
     sL = unique(noprime(sinds[1]))
     sR = unique(noprime(sinds[2]))
     Linds = uniqueinds(rdm[1], rdm[2])
+
+    @show maxlinkdim(rdm)
 
     # This is the starting density matrix
     ρtr = (rdm[1] * rdm[2])
@@ -96,12 +168,13 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=fal
     end
 
     # find the nearest CPTP map
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr))
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr), nkraus=4)
     # objective value is the 3rd entry
     loss_hist = map(x -> x[3], iterdata)
 
-    return Ks, loss_hist
+    return Ks, optloss, initloss, loss_hist
 end
+
 
 # function frobenius_norm(A, B)
 #     Δ = A - B

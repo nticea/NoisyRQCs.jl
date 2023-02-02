@@ -33,7 +33,7 @@ operators.
 min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
 s.t.    ∑ᵢKᵢ†Kᵢ = I
 """
-function approxquantumchannel(ρ, ρ̃, nkraus=nothing)
+function approxquantumchannel(ρ, ρ̃; nkraus::Int=nothing)
     @assert size(ρ̃) == size(ρ) "Dimensions of ρ and ρ̃ must match"
     ndim = first(size(ρ))
     @assert ispow2(ndim) "Dimension of density matrix must be a power of 2"
@@ -69,8 +69,7 @@ function approxquantumchannel(ρ, ρ̃, nkraus=nothing)
     # Frobenius norm: ∑ᵢKᵢρKᵢ† - ρ̃.
     approxs = [
         @expression(model, sum(K * ρi * K' for K in eachslice(Ks, dims=3)))
-        for ρi in eachslice(ρ, dims=3)
-    ]
+        for ρi in eachslice(ρ, dims=3)]
     diffs = [@expression(model, approxs[i] - ρ̃[:, :, i]) for i in 1:length(approxs)]
 
     # Compute the Frobenius norm. This will have quartic terms, so we have to use
@@ -96,8 +95,12 @@ function approxquantumchannel(ρ, ρ̃, nkraus=nothing)
 
     optloss = objective_value(model)
 
+    @show initloss
+    @show optloss
+
     return value.(Ks), optloss, initloss, iterdata, model
 end
+
 
 
 

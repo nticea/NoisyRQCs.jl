@@ -126,6 +126,7 @@ function partial_trace(ρ::MPO, indslist::Vector{Int}, side::String)
     return ρ_new
 end
 
+
 function get_D(ρ::MPO)
     L = length(ρ)
     d = ITensors.dim(siteind(ρ, 1))
@@ -164,7 +165,7 @@ function physical_indices(ψ::Union{MPS,MPO}; tag::String="Site")
 end
 
 function link_indices(ψ::Union{MPS,MPO}; tag::String="Link")
-    [getfirst(x -> hastags(x, tag), inds(ψs)) for ψs in ψ]
+    taginds(T, tag)
 end
 
 function get_plev_inds(T::ITensor, lev::Int)
