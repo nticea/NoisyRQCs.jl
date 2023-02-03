@@ -47,7 +47,7 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
         end
 
         # Perform the optimization 
-        Ks, optloss, initloss, loss_hist = truncation_quantum_channel(ρ, truncdim, apply_gate=false)
+        Ks, optloss, initloss, loss_hist = truncation_quantum_channel_rdm(ρ, truncdim, apply_gate=false)
 
         # record the data 
         push!(all_Ks, Ks)
@@ -168,7 +168,7 @@ function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int; apply_gate::Bool
     end
 
     # find the nearest CPTP map
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr), nkraus=4)
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr))
     # objective value is the 3rd entry
     loss_hist = map(x -> x[3], iterdata)
 

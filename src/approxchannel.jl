@@ -33,7 +33,7 @@ operators.
 min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
 s.t.    ∑ᵢKᵢ†Kᵢ = I
 """
-function approxquantumchannel(ρ, ρ̃; nkraus::Int=nothing)
+function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
     @assert size(ρ̃) == size(ρ) "Dimensions of ρ and ρ̃ must match"
     ndim = first(size(ρ))
     @assert ispow2(ndim) "Dimension of density matrix must be a power of 2"

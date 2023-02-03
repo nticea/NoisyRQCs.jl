@@ -12,8 +12,8 @@ ITensors.set_warn_order(50)
 Random.seed!(12345)
 
 ## PARAMETERS ## 
-L = 5
-T = 5
+L = 9
+T = 20
 ε = 0
 maxdim = nothing
 truncdim = 1
@@ -24,19 +24,19 @@ truncdim = 1
 # Apply the circuit 
 ρ, all_Ks, all_optloss, all_initloss, all_loss_hist = apply_circuit_truncation_channel(ψ0, T, truncdim, ε=ε, maxdim=maxdim)
 
-# p = plot()
-# cmap = cgrad(:acton, length(all_loss_hist), categorical=true)
-# for (i, lh) in enumerate(all_loss_hist)
-#     plot!(p, lh, c=cmap[i], legend=false)
-# end
-# title!(p, "Training loss")
-# xlabel!(p, "Iteration")
-# plot(p)
+p = plot()
+cmap = cgrad(:acton, length(all_loss_hist), categorical=true)
+for (i, lh) in enumerate(all_loss_hist)
+    plot!(p, lh, c=cmap[i], legend=false)
+end
+title!(p, "Training loss")
+xlabel!(p, "Iteration")
+plot(p)
 
-Δloss = convert.(Float64, log.(cat(all_initloss, all_optloss, dims=2)))[2:end, :]'
+Δloss = convert.(Float64, log10.(cat(all_initloss, all_optloss, dims=2)))[2:end, :]'
 plot(Δloss, legend=false, xticks=(1:2, ["Initial loss", "Final loss"]))
 scatter!(Δloss, legend=false)
-ylabel!("Loss")
+ylabel!("Loss (log10)")
 
 
 # function perfract(x, t, m=0.7, M=1)
