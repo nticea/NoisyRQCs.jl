@@ -19,12 +19,13 @@ T = 20
 maxdim = nothing
 truncdim = 1
 truncidx = floor(Int, L / 2)
+nkraus = 2
 
 # Initialize the wavefunction to be all zeros 
 ψ0 = initialize_wavefunction(L=L)
 
 # Apply the circuit 
-ρ, all_Ks, all_optloss, all_initloss, all_loss_hist = apply_circuit_truncation_channel(ψ0, T, truncdim, truncidx, ε=ε, maxdim=maxdim)
+ρ, all_Ks, all_optloss, all_initloss, all_loss_hist = apply_circuit_truncation_channel(ψ0, T, truncdim, truncidx, nkraus, ε=ε, maxdim=maxdim)
 
 p = plot()
 cmap = cgrad(:acton, length(all_loss_hist), categorical=true)
@@ -43,23 +44,21 @@ Kdephasing_projs_real, Kdephasing_projs_imag, labels = paulidecomp(Kdephasing, s
 Krandom = random_noise(sites, 4)
 Krandom_projs_real, Krandom_projs_imag, labels = paulidecomp(Krandom, sites)
 
-N = 4
-Nsqrt = 2
-
 ## DEPHASING NOISE ## 
-ps = [heatmap(Kdephasing_projs_real[n, :, :], aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:N]
+ps = [heatmap(Kdephasing_projs_imag[n, :, :], aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:4]
 p = plot(ps...,
-    layout=Plots.grid(Nsqrt, Nsqrt, widths=[1 / Nsqrt for _ in 1:Nsqrt]), size=(1000, 1000))
+    layout=Plots.grid(2, 2, widths=[1 / 2 for _ in 1:2]), size=(1000, 1000))
 
 ## RANDOM NOISE ##
-ps = [heatmap(Krandom_projs_real[n, :, :] .^ 2 + Krandom_projs_imag[n, :, :] .^ 2, aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:N]
+ps = [heatmap(Krandom_projs_real[n, :, :], aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:4]
 p = plot(ps...,
-    layout=Plots.grid(Nsqrt, Nsqrt, widths=[1 / Nsqrt for _ in 1:Nsqrt]), size=(1000, 1000))
+    layout=Plots.grid(2, 2, widths=[1 / Nsqrt for _ in 1:2]), size=(1000, 1000))
 
 ## TRUNCATION CHANNEL APPROXIMATION ## 
-K = all_Ks[15]
+K = all_Ks[19]
 K_projs_real, K_projs_imag, labels = paulidecomp(K, sites)
 
-ps = [heatmap(K_projs_real[n, :, :], aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:N]
+ps = [heatmap(K_projs_real[n, :, :], aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:nkraus]
 p = plot(ps...,
-    layout=Plots.grid(Nsqrt, Nsqrt, widths=[1 / Nsqrt for _ in 1:Nsqrt]), size=(1000, 1000))
+    layout=Plots.grid(2, floor(Int, nkraus / 2), widths=[1 / floor(Int, nkraus / 2) for _ in 1:floor(Int, nkraus / 2)]), size=(500 * nkraus / 2, 1000))
+

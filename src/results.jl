@@ -1,11 +1,11 @@
 using ITensors
-using Plots 
-using StatsBase 
+using Plots
+using StatsBase
 using CurveFit
 
 struct Results
     L::Int
-    T::Int 
+    T::Int
     ρ::Union{MPO,Int64}
     bitdist::Vector{Float64}
     state_entropy::Vector{Float64}
@@ -21,29 +21,42 @@ function plot_entropy(r::Results)
     plot_entropy(r.entropy, r.L)
 end
 
-function saturation_value(L::Int; d::Int=2)
-    # note: d is the original local site dimension 
-    L_A = floor(Int, L/2)
-    L_B = L - L_A 
-    dimA = entropy_dim(L_A,d=d)
-    dimB = entropy_dim(L_B,d=d)
-    return -log.((dimA + dimB)/(dimA * dimB + 1))
+function plot_operator_entanglement(S, L::Int; title::String="Operator Entanglement at L/2")
+    mid = floor(Int, L / 2)
+    if size(S)[1] != L
+        S = transpose(S)
+    end
+    toplot = S[mid, :]
+    plot(1:length(toplot), toplot, label="Operator entanglement at L/2")
+    title!(title)
+    xlabel!("T")
 end
 
-function plot_entropy(S::Vector{Float64}, L::Int)
-    plot(1:length(S), S, label="Renyi entropy")
-    title!("Second Renyi Entropy at L/2")
+function saturation_value(L::Int; d::Int=2)
+    # note: d is the original local site dimension 
+    L_A = floor(Int, L / 2)
+    L_B = L - L_A
+    dimA = entropy_dim(L_A, d=d)
+    dimB = entropy_dim(L_B, d=d)
+    return -log.((dimA + dimB) / (dimA * dimB + 1))
+end
+
+function plot_entropy(S::Vector{Float64}, L::Int; title::String="Second Renyi Entropy at L/2", plot_ref=true)
+    plot(1:length(S), S, label="Renyi entropy at L/2")
+    title!(title)
     xlabel!("T")
 
-    # plot the reference
-    d = 2 # the local site dimension 
-    t = collect(1:length(S))
-    early_t = -log.((2*d/(d^2+1)) .^ t)
-    late_t = saturation_value(L, d=2)
+    if plot_ref
+        # plot the reference
+        d = 2 # the local site dimension 
+        t = collect(1:length(S))
+        early_t = -log.((2 * d / (d^2 + 1)) .^ t)
+        late_t = saturation_value(L, d=2)
 
-    t_intersect = sort(findall(x -> x>late_t, early_t))[1]
-    plot!(early_t[1:t_intersect], label="Early t scaling")
-    hline!([late_t], label="Saturation value")
+        t_intersect = sort(findall(x -> x > late_t, early_t))[1]
+        plot!(early_t[1:t_intersect], label="Early t scaling")
+        hline!([late_t], label="Saturation value")
+    end
 end
 
 function porter_thomas_fit(r::Results; do_fit=true)
@@ -65,10 +78,10 @@ function _porter_thomas_fit(bitdist, D::Int, do_fit)
     weights, edges = h.weights, h.edges[1]
     edges = edges[1:end-1]
     weights = weights ./ sum(edges .* weights)
-    
+
     # some cleanup 
     logweights = log.(weights)
-    clean_idx = findall(x -> x!= Inf && x != -Inf, logweights)
+    clean_idx = findall(x -> x != Inf && x != -Inf, logweights)
     logweights = logweights[clean_idx]
     edges = edges[clean_idx]
 
@@ -78,7 +91,7 @@ function _porter_thomas_fit(bitdist, D::Int, do_fit)
 
     if do_fit
         # fit the log.(weights) to a line  
-        a,b,fit_y = line_fit(edges, logweights)
+        a, b, fit_y = line_fit(edges, logweights)
 
         # plot it out 
         plot!(edges, fit_y, label="exponential fit, k=$b")
@@ -87,19 +100,19 @@ function _porter_thomas_fit(bitdist, D::Int, do_fit)
 end
 
 function line_fit(x, y)
-    a,b = linear_fit(x, y)
+    a, b = linear_fit(x, y)
     fit_y = a .+ b .* x
-    return a,b,fit_y
+    return a, b, fit_y
 end
 
 function square_residual(y, ỹ)
-    sum((ỹ .- y).^2)
+    sum((ỹ .- y) .^ 2)
 end
 
 function exponential_fit(x, y)
-    a,b = exp_fit(x, y)
-    fit_y = a.*exp.(b.*x)
-    return a,b,fit_y
+    a, b = exp_fit(x, y)
+    fit_y = a .* exp.(b .* x)
+    return a, b, fit_y
 end
 
 function measure_computational_basis(ρ::MPO; nsamples=10)
@@ -119,7 +132,7 @@ function bitstring_distribution(ρ::MPO)
 
     # From this distribution, get the distribution over bits 
     L = length(ρ)
-    d = ITensors.dim(siteind(ψ,1))
+    d = ITensors.dim(siteind(ψ, 1))
     D = d^L
 
     bitdist = zeros(D)
@@ -133,7 +146,7 @@ function bitstring_distribution(ρ::MPO)
         bitdist[b+1] = probs
     end
 
-    return bitdist 
+    return bitdist
 end
 
 function probability_distribution(ρ::MPO)
@@ -142,8 +155,8 @@ end
 
 function probability_distribution(m::MPS)
     N = length(m)
-    d = ITensors.dim(siteind(m,1))
-  
+    d = ITensors.dim(siteind(m, 1))
+
     # if ITensors.orthocenter(m) != 1
     #   error("probability_distribution: MPS m must have orthocenter(m)==1")
     # end
@@ -151,34 +164,34 @@ function probability_distribution(m::MPS)
     if abs(1.0 - norm(m[1])) > 1E-8
         m ./= norm(m)
         @error "probability_distribution: MPS is not normalized, norm=$(norm(m[1]))"
-      #error("probability_distribution: MPS is not normalized, norm=$(norm(m[1]))")
+        #error("probability_distribution: MPS is not normalized, norm=$(norm(m[1]))")
     end
 
     probs = zeros(N, d)
     A = m[1]
-  
-    for j in 1:N # iterate through all the sites in the MPS 
-      s = siteind(m, j) # extract each site 
-      # Compute the probability of each state
-      An = ITensor()
-      pn = 0.0
-      for n in 1:d 
-        projn = ITensor(s)
-        projn[s => n] = 1.0
-        An = A * dag(projn)
-        pn = real(scalar(dag(An) * An)) # probability of each state 
-        probs[j, n] = pn
-      end
 
-      # Contract this block with the next site 
-      # See "retrieving a component from an MPS/TT" from 
-      # https://tensornetwork.org/mps/ 
-      if j < N
-        A = m[j + 1] * An
-        A *= (1.0 / sqrt(pn))
-      end
+    for j in 1:N # iterate through all the sites in the MPS 
+        s = siteind(m, j) # extract each site 
+        # Compute the probability of each state
+        An = ITensor()
+        pn = 0.0
+        for n in 1:d
+            projn = ITensor(s)
+            projn[s=>n] = 1.0
+            An = A * dag(projn)
+            pn = real(scalar(dag(An) * An)) # probability of each state 
+            probs[j, n] = pn
+        end
+
+        # Contract this block with the next site 
+        # See "retrieving a component from an MPS/TT" from 
+        # https://tensornetwork.org/mps/ 
+        if j < N
+            A = m[j+1] * An
+            A *= (1.0 / sqrt(pn))
+        end
     end
     return probs
-  end
+end
 
-  using ITensors.HDF5
+using ITensors.HDF5

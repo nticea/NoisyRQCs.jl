@@ -11,7 +11,7 @@ using JuMP, Ipopt
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int, truncidx::Int; random_type="Haar", ε=0.05, maxdim=nothing)
+function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int, truncidx::Int, nkraus::Int; random_type="Haar", ε=0.05, maxdim=nothing)
     if isnothing(maxdim)
         println("No truncation")
     else
@@ -46,7 +46,7 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int, trunc
         end
 
         # Perform the optimization 
-        Ks, optloss, initloss, loss_hist = truncation_quantum_channel_rdm(ρ, truncdim, truncidx, apply_gate=true)
+        Ks, optloss, initloss, loss_hist = truncation_quantum_channel(ρ, truncdim, truncidx, nkraus, apply_gate=false)
 
         # record the data 
         push!(all_Ks, Ks)
@@ -60,7 +60,7 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int, trunc
     return ρ, all_Ks, all_optloss, all_initloss, all_loss_hist
 end
 
-function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int; apply_gate::Bool=false)
+function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int, nkraus::Int; apply_gate::Bool=false)
     ρ = copy(ρ)
     sites = physical_indices(ρ) # qubit sites unprimed 
     sL = noprime(sites[truncidx]) # site on the left 
@@ -114,7 +114,7 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int; apply
     ρ̃_ij = permute(ρ̃_ij, iX, iX1, iL)
 
     # find the nearest CPTP map
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρ_ij), array(ρ̃_ij), nkraus=4)
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρ_ij), array(ρ̃_ij), nkraus=nkraus)
     # objective value is the 3rd entry
     loss_hist = map(x -> x[3], iterdata)
 
@@ -128,7 +128,7 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int; apply
     return Ks, optloss, initloss, loss_hist
 end
 
-function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int, truncidx::Int; apply_gate::Bool=false)
+function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int, truncidx::Int, nkraus::Int; apply_gate::Bool=false)
     ρ = copy(ρ)
 
     # Take the reduced density matrix
@@ -169,7 +169,7 @@ function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int, truncidx::Int; a
     ρ̃tr = permute(ρ̃tr, iX, iX1)
 
     # find the nearest CPTP map
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr))
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr), nkraus=nkraus)
     # objective value is the 3rd entry
     loss_hist = map(x -> x[3], iterdata)
 
