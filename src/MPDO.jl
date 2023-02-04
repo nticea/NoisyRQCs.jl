@@ -129,13 +129,14 @@ end
 
 function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
     max_inner_dim::Union{Nothing,Int}=nothing, random_type::String="Haar",
-    ε::Real=0.05, benchmark::Bool=false)
+    ε::Real=0, benchmark::Bool=false)
 
     # Housekeeping 
     L = length(ψ)
     sites = siteinds(ψ)
     if isnothing(maxdim)
         println("No truncation")
+        maxdim = 2^((L - 1) / 2) # accounts for the fact that the MPDO bonds are doubled relative to the MPS bonds  
     else
         println("Truncating at m=$(maxdim)")
         if !isnothing(max_inner_dim)
@@ -194,20 +195,17 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         end
 
         ## Apply a layer of unitary evolution to the MPS ##
+
         # At each time point, make a layer of random unitary gates 
         unitary_gates = unitary_layer(sites, t, random_type)
-
         # Now apply the gates to the wavefunction (alternate odd and even) 
         for u in unitary_gates
             ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
         end
 
         # Apply the noise layer 
-        ψ = apply_noise_mpdo(ψ, Ks)
+        ψ = apply_noise_mpdo(ψ, Ks, inner_dim=max_inner_dim)
 
-        # Truncate the virtual bonds
-
-        # Truncate the inner indices 
     end
 
     if benchmark

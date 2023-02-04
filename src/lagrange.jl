@@ -11,8 +11,7 @@ using JuMP, Ipopt
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; random_type="Haar", ε=0.05, maxdim=nothing)
-    L = length(ψ0)
+function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int, truncidx::Int; random_type="Haar", ε=0.05, maxdim=nothing)
     if isnothing(maxdim)
         println("No truncation")
     else
@@ -47,7 +46,7 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
         end
 
         # Perform the optimization 
-        Ks, optloss, initloss, loss_hist = truncation_quantum_channel_rdm(ρ, truncdim)
+        Ks, optloss, initloss, loss_hist = truncation_quantum_channel_rdm(ρ, truncdim, truncidx, apply_gate=true)
 
         # record the data 
         push!(all_Ks, Ks)
@@ -61,13 +60,8 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int; rando
     return ρ, all_Ks, all_optloss, all_initloss, all_loss_hist
 end
 
-function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=false, truncidx::Union{Int,Nothing}=nothing)
+function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int; apply_gate::Bool=false)
     ρ = copy(ρ)
-    L = length(ρ)
-
-    if isnothing(truncidx) # applying truncation channel at L/2
-        truncidx = floor(Int, L / 2)
-    end
     sites = physical_indices(ρ) # qubit sites unprimed 
     sL = noprime(sites[truncidx]) # site on the left 
     sR = noprime(sites[truncidx+1]) # site on the right 
@@ -126,21 +120,16 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int; apply_gate::Bool=fal
 
     # Turn the Ks into ITensors 
     krausidx = Index(size(Ks)[3], tags="Kraus")
-    Ks = ITensor(X, Y, krausidx)
+    Ks = ITensor(Ks, iX, iX1, krausidx)
 
-    # We can optionally de-combine the indices (don't do this yet)
-    # Ks = Ks * cX * cX1 * cL
+    # Finally, de-combine the indices
+    Ks = Ks * cX * cX1
 
     return Ks, optloss, initloss, loss_hist
 end
 
-function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int; apply_gate::Bool=false, truncidx::Union{Int,Nothing}=nothing)
+function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int, truncidx::Int; apply_gate::Bool=false)
     ρ = copy(ρ)
-    L = length(ρ)
-
-    if isnothing(truncidx)
-        truncidx = floor(Int, L / 2)
-    end
 
     # Take the reduced density matrix
     rdm = reduced_density_matrix(ρ, [truncidx, truncidx + 1])
@@ -168,14 +157,16 @@ function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int; apply_gate::Bool
     ρ̃tr = Ũ * S̃ * Ṽ
 
     # tie indices together
-    X = combiner(sL, sR)
-    X1 = combiner(prime(sL), prime(sR))
-    ρtr = ρtr * X * X1
-    ρ̃tr = ρ̃tr * X * X1
+    cX = combiner(sL, sR)
+    cX1 = combiner(prime(sL), prime(sR))
+    iX = combinedind(cX)
+    iX1 = combinedind(cX1)
+    ρtr = ρtr * cX * cX1
+    ρ̃tr = ρ̃tr * cX * cX1
 
-    if inds(ρtr) != inds(ρ̃tr)
-        ρtr = permute(ρtr, inds(ρ̃tr))
-    end
+    # permute the indices 
+    ρtr = permute(ρtr, iX, iX1)
+    ρ̃tr = permute(ρ̃tr, iX, iX1)
 
     # find the nearest CPTP map
     Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr))
@@ -184,10 +175,10 @@ function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int; apply_gate::Bool
 
     # Turn the Ks into ITensors 
     krausidx = Index(size(Ks)[3], tags="Kraus")
-    Ks = ITensor(X, Y, krausidx)
+    Ks = ITensor(Ks, iX, iX1, krausidx)
 
-    # We can optionally de-combine the indices (don't do this yet)
-    # Ks = Ks * X * X1
+    # Finally, decombine the indices 
+    Ks = Ks * cX * cX1
 
     return Ks, optloss, initloss, loss_hist
 end

@@ -3,6 +3,7 @@ using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
 include("../src/lagrange.jl")
 include("../src/utilities.jl")
+include("../src/channel-analysis.jl")
 
 using Plots
 using Images, ImageTransformations
@@ -17,12 +18,13 @@ T = 20
 ε = 0
 maxdim = nothing
 truncdim = 1
+truncidx = floor(Int, L / 2)
 
 # Initialize the wavefunction to be all zeros 
 ψ0 = initialize_wavefunction(L=L)
 
 # Apply the circuit 
-ρ, all_Ks, all_optloss, all_initloss, all_loss_hist = apply_circuit_truncation_channel(ψ0, T, truncdim, ε=ε, maxdim=maxdim)
+ρ, all_Ks, all_optloss, all_initloss, all_loss_hist = apply_circuit_truncation_channel(ψ0, T, truncdim, truncidx, ε=ε, maxdim=maxdim)
 
 p = plot()
 cmap = cgrad(:acton, length(all_loss_hist), categorical=true)
@@ -33,30 +35,31 @@ title!(p, "Training loss")
 xlabel!(p, "Iteration")
 plot(p)
 
-Δloss = convert.(Float64, log10.(cat(all_initloss, all_optloss, dims=2)))[2:end, :]'
-plot(Δloss, legend=false, xticks=(1:2, ["Initial loss", "Final loss"]))
-scatter!(Δloss, legend=false)
-ylabel!("Loss (log10)")
+## FOR REFERENCE -- construct various types of noise ## 
+sites = physical_indices(ρ)[truncidx:truncidx+1]
+Kdephasing = dephasing_noise(sites, 0.5)
+Kdephasing_projs_real, Kdephasing_projs_imag, labels = paulidecomp(Kdephasing, sites)
 
+Krandom = random_noise(sites, 4)
+Krandom_projs_real, Krandom_projs_imag, labels = paulidecomp(Krandom, sites)
 
-# function perfract(x, t, m=0.7, M=1)
-#     x = x / t
-#     return m + (M - m) * (x - floor(x))
-# end
+N = 4
+Nsqrt = 2
 
-# function domcol(w; n=10)
-#     logm = log.(abs.(w)) # for lines of constant modulus
-#     H = angle.(w) * 180 / π #compute argument of  w within interval [-180, 180], iei the Hue
+## DEPHASING NOISE ## 
+ps = [heatmap(Kdephasing_projs_real[n, :, :], aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:N]
+p = plot(ps...,
+    layout=Plots.grid(Nsqrt, Nsqrt, widths=[1 / Nsqrt for _ in 1:Nsqrt]), size=(1000, 1000))
 
-#     V = perfract.(logm, 2π / n) # lines of constant log-modulus
-#     arr = permutedims(cat(H, ones(size(H)), V, dims=3), [3, 1, 2]) #HSV-array
+## RANDOM NOISE ##
+ps = [heatmap(Krandom_projs_real[n, :, :] .^ 2 + Krandom_projs_imag[n, :, :] .^ 2, aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:N]
+p = plot(ps...,
+    layout=Plots.grid(Nsqrt, Nsqrt, widths=[1 / Nsqrt for _ in 1:Nsqrt]), size=(1000, 1000))
 
-#     return RGB.(colorview(HSV, arr[:, end:-1:1, :]))
-# end
+## TRUNCATION CHANNEL APPROXIMATION ## 
+K = all_Ks[15]
+K_projs_real, K_projs_imag, labels = paulidecomp(K, sites)
 
-# idx = 10
-# s = 1
-# Ks = all_Ks[idx]
-# Ki = Ks[:, :, s]
-# domcol(Ki)
-# img = domcol(Ki; n=13)
+ps = [heatmap(K_projs_real[n, :, :], aspect_ratio=:equal, clim=(-1, 1), c=:bluesreds, yflip=true) for n in 1:N]
+p = plot(ps...,
+    layout=Plots.grid(Nsqrt, Nsqrt, widths=[1 / Nsqrt for _ in 1:Nsqrt]), size=(1000, 1000))
