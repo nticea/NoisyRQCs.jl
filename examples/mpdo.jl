@@ -16,4 +16,4 @@ truncdim = 1
 ψ0 = initialize_wavefunction(L=L)
 
 # Apply the MPDO circuit
-ψ = apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim, benchmark=true)
+ψ, state_entanglement, operator_entanglement, trace = apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim, benchmark=true)

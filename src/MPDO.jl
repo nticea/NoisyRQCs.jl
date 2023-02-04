@@ -102,33 +102,26 @@ function make_kraus_operators(sites, ε::Real)
     return Ks
 end
 
-function apply_noise_mpdo(ψ::MPS, Ks; inner_dim::Union{Int,Nothing}=1)
+function apply_noise_mpdo(ψ::MPS, Ks; inner_dim::Union{Int,Nothing}=2)
     ψ̃ = copy(ψ)
     sites = physical_indices(ψ)
 
-    for m in 1:length(ψ)
-        K = Ks[m]
-        M = ψ[m]
-        M = prime(M, sites[m])
+    for j in 1:length(ψ)
+        K = copy(Ks[j])
+        T = copy(ψ[j])
+        T = prime(T, sites[j])
 
-        M̃ = M * K[1]
-        inneridx1 = taginds(M̃, "Inner")[1]
+        T̃ = T * K[1]
+        inneridx1 = taginds(T̃, "Inner")[1]
         inneridx2 = copy(inneridx1)
         for i in 2:length(K)
-            MKi = M * K[i]
-            M̃, inneridx2 = directsum(M̃ => inneridx2, MKi => inneridx1, tags="Inner,n=$(m)")
+            TKi = T * K[i]
+            T̃, inneridx2 = directsum(T̃ => inneridx2, TKi => inneridx1, tags="Inner,n=$(j)")
         end
 
-        # perform truncation 
-        @show inds(M̃)
-        linds = linkindT(M̃)
-        MMdag = M̃ * prime(dag(M̃), sites[m], linds...)
-        if !isnothing(inner_dim)
-            # V is the new value for M 
-            U, S, V = ITensors.svd(MMdag, prime(sites[m]), prime.(linds)..., maxdim=inner_dim, righttags="Inner,n=$(m)")
-            @show inds(V)
-            ψ̃[m] = V
-        end
+        # Perform SVD on inner index 
+        U, S, V = ITensors.svd(T̃, uniqueinds(T̃, inneridx2), maxdim=inner_dim, righttags="Inner,n=$(j)")
+        ψ̃[j] = U * S
     end
 
     return ψ̃
@@ -210,13 +203,15 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         end
 
         # Apply the noise layer 
-        #ψ = apply_noise_mpdo(ψ, Ks)
-
-        # Perform a canonicalization from L → R 
+        ψ = apply_noise_mpdo(ψ, Ks)
 
         # Truncate the virtual bonds
 
         # Truncate the inner indices 
+    end
+
+    if benchmark
+        return ψ, state_entanglement, operator_entanglement, trace
     end
 
     return ψ
