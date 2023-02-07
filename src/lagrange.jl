@@ -122,6 +122,10 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int, nkrau
     krausidx = Index(size(Ks)[3], tags="Kraus")
     Ks = ITensor(Ks, iX, iX1, krausidx)
 
+    # We want to SVD along the Kraus dimension to pick out components
+    KKdag = Ks * dag(prime(Ks, iX, iX1))
+    U, S, V = svd(KKdag, prime(iX), prime(iX1), righttags="Kraus")
+
     # Finally, de-combine the indices
     Ks = Ks * cX * cX1
 
@@ -177,8 +181,12 @@ function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int, truncidx::Int, n
     krausidx = Index(size(Ks)[3], tags="Kraus")
     Ks = ITensor(Ks, iX, iX1, krausidx)
 
+    # We want to SVD along the Kraus dimension to pick out components
+    KKdag = Ks * dag(prime(Ks, iX, iX1))
+    U, S, V = svd(KKdag, prime(iX), prime(iX1), righttags="Kraus")
+
     # Finally, decombine the indices 
-    Ks = Ks * cX * cX1
+    Ks = V * cX * cX1
 
     return Ks, optloss, initloss, loss_hist
 end
