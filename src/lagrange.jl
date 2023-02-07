@@ -46,7 +46,7 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int, trunc
         end
 
         # Perform the optimization 
-        Ks, optloss, initloss, loss_hist = truncation_quantum_channel(ρ, truncdim, truncidx, nkraus, apply_gate=false)
+        Ks, optloss, initloss, loss_hist = truncation_quantum_channel_rdm(ρ, truncdim, truncidx, nkraus, apply_gate=false)
 
         # record the data 
         push!(all_Ks, Ks)

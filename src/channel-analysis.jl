@@ -135,3 +135,21 @@ function random_noise(sites, nkraus::Int)
     K = KC * CS * prime(CS)
     return K
 end
+
+function visualize_paulidecom(K, sites; title::String="Pauli Decomposition", clims::Tuple{Real,Real}=(-1, 1))
+    Kreal, Kimag, labels = paulidecomp(K, sites)
+    numkraus = size(Kreal)[1]
+    ndims = size(Kreal)[2]
+    ps = []
+    for n in 1:numkraus
+        p = heatmap(Kreal[n, :, :] .^ 2 + Kimag[n, :, :] .^ 2, aspect_ratio=:equal, clim=clims, c=:bluesreds, yflip=true)
+        ann = [(j, i, text(labels[n, i, j], :white, :center)) for i in 1:ndims for j in 1:ndims]
+        p = annotate!(p, ann, linecolor=:white, yflip=:true)
+        push!(ps, p)
+    end
+    s = (500 * nkraus / 2, 1000)
+    p = plot(ps...,
+        layout=Plots.grid(2, floor(Int, nkraus / 2), widths=[1 / floor(Int, nkraus / 2) for _ in 1:floor(Int, nkraus / 2)]), size=s, plot_title=title)
+
+    return p
+end
