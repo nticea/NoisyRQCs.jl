@@ -65,17 +65,17 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
     # Define Krauss operators contraint: ∑ᵢKᵢ†Kᵢ = I
     @constraint(model, sum(K' * K for K in eachslice(Ks, dims=3)) .== I)
 
-    # Ensure that the Kraus operators are Hermitian
-    for i in 1:nkraus
-        K = Ks[:, :, i]
-        for x in 1:ndim
-            for y in 1:ndim
-                if x < y
-                    @constraint(model, K[x, y] == K'[x, y])
-                end
-            end
-        end
-    end
+    # # Ensure that the Kraus operators are Hermitian
+    # for i in 1:nkraus
+    #     K = Ks[:, :, i]
+    #     for x in 1:ndim
+    #         for y in 1:ndim
+    #             if x < y
+    #                 @constraint(model, K[x, y] == K'[x, y])
+    #             end
+    #         end
+    #     end
+    # end
 
     # Find the difference between the approximation and tsvd matrix and compute the
     # Frobenius norm: ∑ᵢKᵢρKᵢ† - ρ̃.
