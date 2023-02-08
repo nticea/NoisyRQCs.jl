@@ -22,6 +22,13 @@ function density_matrix(ψ::MPS)
     return outer(ψ, ψdag)
 end
 
+"""
+EN(ρ) = log₂||ρ^(Tᵦ
+"""
+function logarithmic_negativity(ρ::MPO)
+
+end
+
 function entanglement_entropy(ψ::MPS; b=nothing)
     if isnothing(b)
         b = floor(Int, length(ψ) / 2)

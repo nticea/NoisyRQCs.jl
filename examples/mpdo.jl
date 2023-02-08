@@ -9,9 +9,9 @@ ITensors.set_warn_order(50)
 ## PARAMETERS ## 
 L = 9
 T = 100
-εs = [0]
+εs = [0.001]
 maxdim = 16
-max_inner_dims = [2]
+max_inner_dims = [20]
 
 # Initialize the wavefunction to product state (all 0)
 ψ0 = initialize_wavefunction(L=L)
@@ -36,17 +36,20 @@ for ε in εs
     push!(traces, ts)
 end
 
+## PLOTTING ## 
+
 global p1 = plot()
 global p2 = plot()
 global p3 = plot()
-ε_cmap = cgrad(:Set1_4, length(εs), categorical=true)
+
+ε_cmap = cgrad(:Set1_4, 4, categorical=true)
 innerdim_ls = [:solid, :dash, :dot]
 
 for (i, ε) in enumerate(εs)
     for (j, max_inner_dim) in enumerate(max_inner_dims)
         # state entropy
         toplot = st_ents[i][j]
-        p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Second Rényi Entropy of State at L/2", legend=:bottomright)
 
         # operator entropy 
@@ -56,12 +59,12 @@ for (i, ε) in enumerate(εs)
             S = transpose(S)
         end
         toplot = S[mid, :]
-        p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Operator Entanglement Entropy at L/2", legend=:bottomright)
 
         # trace 
         toplot = traces[i][j]
-        p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Trace", legend=:bottomright)
 
     end
