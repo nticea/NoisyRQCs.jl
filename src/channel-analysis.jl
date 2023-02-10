@@ -8,7 +8,7 @@ Computed Frobenius norm of a tensor, keeping indices provided
 """
 function frobneiusnorm(K, onindices...)
     allinds = collect(inds(K))
-    indstonorm = allinds[allinds.∉Ref([Kindex])]
+    indstonorm = allinds[allinds.∉Ref(onindices)]
 
     # For some reason it's not happy two broadcasts at the same time :(
     normed = norm.(K)
@@ -23,7 +23,7 @@ Computes matrix of pauli decomposition coefficients of tensor on given indices a
 C_i = 1/n^2 Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
 """
 function paulidecomp(K, sites)
-    psites = prime.(sites) # we will work with the convention that MPO has primed inds on one side and unprimed on the other 
+    psites = prime.(sites) # we will work with the convention that MPO has primed inds on one side and unprimed on the other
 
     # Pauli operators
     Id = Matrix(I, 2, 2)
@@ -53,19 +53,19 @@ function paulidecomp(K, sites)
     # Compute pauli decomposition coefficients: C_i = 1/2^n Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
     # where n is the number of sites.
     nsites = length(sites)
-    N = 2^nsites # defining some useful constants 
+    N = 2^nsites # defining some useful constants
     @show inds(K)
 
     Cs = (1 / N) .* Ref(K) .* basis
 
     # for each Ki in the stack of Kraus operators, plot its projection onto the coefficients
-    kraus_dim = ITensors.dim.(inds(Cs[1, 1]))[1] # the kraus dimension 
+    kraus_dim = ITensors.dim.(inds(Cs[1, 1]))[1] # the kraus dimension
     K_projs_real = zeros(Float64, kraus_dim, N, N)
     K_projs_imag = zeros(Float64, kraus_dim, N, N)
     labels = ["" for _ in 1:kraus_dim, _ in 1:N, _ in 1:N]
     for c1 in 1:N
         for c2 in 1:N
-            for i in 1:kraus_dim # iterate through the dimensions of the kraus operator 
+            for i in 1:kraus_dim # iterate through the dimensions of the kraus operator
                 K_projs_real[i, c1, c2] = real(Cs[c1, c2][i])
                 K_projs_imag[i, c1, c2] = imag(Cs[c1, c2][i])
                 labels[i, c1, c2] = "K$(i)" * basis_labels[c1, c2]
@@ -153,3 +153,20 @@ function visualize_paulidecom(K, sites; title::String="Pauli Decomposition", cli
 
     return p
 end
+
+# function plotkrausdecomp(K, sites, n, title)
+#     # Calculte pauli decomposition coefficients
+#     coefs, basis, labels = paulidecomp(K, sites)
+
+#     # Transform coefficient tensors into 3D array
+#     projarr = cat([getindex.(array.(coefs), Ref(i)) for i in 1:n]..., dims=3)
+#     projnorms = norm.(projarr)
+
+#     # Plot
+#     ps = [heatmap(projnorms[:, :, i], aspect_ratio=:equal, c=:bluesreds, yflip=true, title=(title * " $i")) for i in 1:n]
+#     return plot(
+#         ps...,
+#         layout=Plots.grid(ceil(Int, n / 2), 2),
+#         size=(500 * (n ÷ 2), 1000)
+#     )
+# end

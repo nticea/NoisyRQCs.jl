@@ -4,25 +4,63 @@ using TSVD
 using JuMP
 using Ipopt
 using Kronecker: ⊗
-import Base: Matrix
+import Base
 
 """
-Reshape MPO into matrix
+Convert MPO into matrix
 """
-function Matrix(A::MPO)
-    # contract link indices
-    Acontracted = *([A[i] for i in eachindex(A)]...)
-
+function Base.Matrix(A::MPO)
     # combine primed and unprimed site indices to make matrix
     sinds = hcat(siteinds(A)...)
     unprimed = sinds[1, :]
     primed = sinds[2, :]
     Cunprimed = combiner(unprimed...)
     Cprimed = combiner(primed...)
-    Atensor = Cunprimed * Acontracted * Cprimed
+    Atensor = Cunprimed * *(A...) * Cprimed
 
     # convert 2D tensor into matrix
     return matrix(Atensor)
+end
+
+"""
+Convert ITensor into matrix
+"""
+function toMatrix(A::ITensor, inds1, inds2)
+    # get combiners from grouped indices
+    C1 = combiner(inds1...)
+    C2 = combiner(inds2...)
+    Atensor = C1 * A * C2
+
+    # convert 2D tensor into matrix
+    return matrix(Atensor)
+end
+
+"""
+Convert Array with combined dimensions into Tensor
+"""
+function toITensor(A, inds1, inds2, otherinds...)
+    # get combiners from grouped indices
+    C1 = combiner(inds1...)
+    C2 = combiner(inds2...)
+
+    # Convert matrix to ITensor
+    ind1 = combinedind(C1)
+    ind2 = combinedind(C2)
+    t = ITensor(A, ind1, ind2, otherinds...)
+
+    # Uncombine indices
+    return t * C1 * C2
+end
+
+"""
+Transform Kraus operator tensor to canonical form with SVD. The quantum channel defined
+by the set of Kraus operators K_i is invariant under unitary transformation on the virtual
+index. This allows us to SVD the Kraus tensor on the virtual index and drop the U tensor.
+"""
+function getcanonicalkraus(Ks, virtualidx)
+    U, S, V = svd(Ks, virtualidx)
+    sindex = uniqueind(S, V)
+    return δ(virtualidx, sindex) * S * V
 end
 
 """
@@ -49,7 +87,7 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
     model = Model(Ipopt.Optimizer)
     # complex array variables are not currently supported, so have to reshape
     nqubits = floor(Int64, log(2, ndim))
-    maxnkraus = nqubits^2
+    maxnkraus = (2^nqubits)^2
     nkraus = isnothing(nkraus) ? maxnkraus : nkraus
     Ksdims = (ndim, ndim, nkraus)
     # the optimizer needs help with starting from a feasible point, so we initialize with
