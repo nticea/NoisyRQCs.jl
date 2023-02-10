@@ -13,7 +13,7 @@ Tests the channel approximation function.
 """
 
 # 1. generate random density matrices
-nsites = 2
+nsites = 3
 bonddim = 100
 sites = siteinds("Qubit", nsites)
 psi = randomMPS(ComplexF64, sites, linkdims=bonddim)
@@ -44,21 +44,14 @@ compl = +([Ki' * Ki for Ki in eachslice(Ks, dims=3)]...)
 krausidx = Index(last(size(Ks)), "Kraus")
 Kraw = toITensor(Ks, prime.(sites), sites, krausidx)
 
-# Build Kdag TODO: there must be a better way
-Kdaglist = [Ki' for Ki in eachslice(Ks, dims=3)]
-Kdagarr = reshape(reduce(hcat, Kdaglist), size(Ks)...)
-Kdagraw = toITensor(Kdagarr, prime.(sites), sites, krausidx)
-
-# Check completeness with matrices
-res = prime(Kraw) * Kdagraw * δ(krausidx, prime(krausidx))
-
 # Put Kraus tensor into canonical form
 K = getcanonicalkraus(Kraw, krausidx)
-Kdag = getcanonicalkraus(Kdagraw, krausidx)
 
 # Check completeness with tensors
-complete = apply(Kdag, *([δ(ind, prime(ind)) for ind in sites]...), apply_dag=true)
-array(complete)
+Kdag = swapprime(dag(K), 0 => 1) * δ(krausidx, krausidx')
+complete = apply(Kdag, K)
+delt = *([δ(ind, ind') for ind in sites]...)
+@assert complete ≈ delt "Kraus tensor fails completeness condition"
 
 # Test channel, make sure loss it the same
 approx = apply(K, rho, apply_dag=true)
