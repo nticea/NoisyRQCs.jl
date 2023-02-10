@@ -45,10 +45,10 @@ function apply_circuit_truncation_channel(ψ0::MPS, T::Int, truncdim::Int, trunc
             ρ = apply_onesite_gate(ρ, n)
         end
 
-        # Perform the optimization 
+        # Perform the optimization
         Ks, optloss, initloss, loss_hist = truncation_quantum_channel_rdm(ρ, truncdim, truncidx, nkraus, apply_gate=false)
 
-        # record the data 
+        # record the data
         push!(all_Ks, Ks)
         push!(all_loss_hist, loss_hist)
         push!(all_optloss, optloss)
@@ -62,18 +62,18 @@ end
 
 function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int, nkraus::Int; apply_gate::Bool=false)
     ρ = copy(ρ)
-    sites = physical_indices(ρ) # qubit sites unprimed 
-    sL = noprime(sites[truncidx]) # site on the left 
-    sR = noprime(sites[truncidx+1]) # site on the right 
+    sites = physical_indices(ρ) # qubit sites unprimed
+    sL = noprime(sites[truncidx]) # site on the left
+    sR = noprime(sites[truncidx+1]) # site on the right
 
-    # Orthogonalize the MPS around this site 
+    # Orthogonalize the MPS around this site
     orthogonalize!(ρ, truncidx)
     @show linkdim(ρ, truncidx)
 
     # snip two sites out of ρ
     ρ_ij = ρ[truncidx] * ρ[truncidx+1]
 
-    ## IGNORE THIS ## 
+    ## IGNORE THIS ##
     if apply_gate
         println("Applying gate")
         g = make_unitary_gate(sL, sR, "Haar")
@@ -83,21 +83,21 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int, nkrau
         ρ_ij = replaceprime(ρ_ij, 2 => 0)
     end
 
-    # SVD the resulting tensor 
+    # SVD the resulting tensor
     inds3 = uniqueinds(ρ[truncidx], ρ[truncidx+1])
     U, S, V = ITensors.svd(ρ_ij, inds3, maxdim=truncdim, lefttags="Link,l=$(truncidx-1)", righttags="Link,l=$(truncidx+1)")
 
-    # Create the target tensor 
+    # Create the target tensor
     ρ̃_ij = U * S * V
 
     ## Tie the indices together and make sure all the indices are the same ##
 
-    # Extract the link indices 
+    # Extract the link indices
     lL = taginds(ρ_ij, "Link,l=$(truncidx-1)")
     rL = taginds(ρ_ij, "Link,l=$(truncidx+1)")
     @assert length(lL) > 0 && length(rL) > 0
 
-    # These combiners will tie the indices together 
+    # These combiners will tie the indices together
     cL = combiner(lL, rL)
     cX = combiner(sL, sR)
     cX1 = combiner(prime(sL), prime(sR))
@@ -105,29 +105,24 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int, nkrau
     iX = combinedind(cX)
     iX1 = combinedind(cX1)
 
-    # apply the combiners 
+    # apply the combiners
     ρ_ij = ρ_ij * cL * cX * cX1
     ρ̃_ij = ρ̃_ij * cL * cX * cX1
 
-    # permute the indices 
+    # permute the indices
     ρ_ij = permute(ρ_ij, iX, iX1, iL)
     ρ̃_ij = permute(ρ̃_ij, iX, iX1, iL)
 
     # find the nearest CPTP map
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρ_ij), array(ρ̃_ij), nkraus=nkraus)
+    Ksarr, optloss, initloss, iterdata, model = approxquantumchannel(array(ρ_ij), array(ρ̃_ij), nkraus=nkraus)
     # objective value is the 3rd entry
     loss_hist = map(x -> x[3], iterdata)
 
-    # Turn the Ks into ITensors 
-    krausidx = Index(size(Ks)[3], tags="Kraus")
-    Ks = ITensor(Ks, iX, iX1, krausidx)
-
-    # We want to SVD along the Kraus dimension to pick out components
-    KKdag = Ks * dag(prime(Ks, iX, iX1))
-    U, S, V = svd(KKdag, prime(iX), prime(iX1), righttags="Kraus")
-
-    # Finally, decombine the indices 
-    Ks = V * cX * cX1
+    # Turn the Ks into ITensors
+    virtualidx = Index(size(Ksarr)[3], tags="Kraus")
+    Ksraw = ITensor(Ksarr, iX, iX1, virtualidx)
+    Ksraw = Ksraw * cX * cX1
+    Ks = getcanonicalkraus(Ksraw, virtualidx)
 
     return Ks, optloss, initloss, loss_hist
 end
@@ -168,25 +163,20 @@ function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int, truncidx::Int, n
     ρtr = ρtr * cX * cX1
     ρ̃tr = ρ̃tr * cX * cX1
 
-    # permute the indices 
+    # permute the indices
     ρtr = permute(ρtr, iX, iX1)
     ρ̃tr = permute(ρ̃tr, iX, iX1)
 
     # find the nearest CPTP map
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr), nkraus=nkraus)
+    Ksarr, optloss, initloss, iterdata, model = approxquantumchannel(array(ρtr), array(ρ̃tr), nkraus=nkraus)
     # objective value is the 3rd entry
     loss_hist = map(x -> x[3], iterdata)
 
-    # Turn the Ks into ITensors 
-    krausidx = Index(size(Ks)[3], tags="Kraus")
-    Ks = ITensor(Ks, iX, iX1, krausidx)
-
-    # We want to SVD along the Kraus dimension to pick out components
-    KKdag = Ks * dag(prime(Ks, iX, iX1))
-    U, S, V = svd(KKdag, prime(iX), prime(iX1), righttags="Kraus")
-
-    # Finally, decombine the indices 
-    Ks = V * cX * cX1
+    # Turn the Ks into ITensors
+    virtualidx = Index(size(Ksarr)[3], tags="Kraus")
+    Ksraw = ITensor(Ksarr, iX, iX1, virtualidx)
+    Ksraw = Ksraw * cX * cX1
+    Ks = getcanonicalkraus(Ksraw, virtualidx)
 
     return Ks, optloss, initloss, loss_hist
 end

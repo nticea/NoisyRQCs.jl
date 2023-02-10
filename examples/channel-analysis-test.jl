@@ -10,10 +10,9 @@ nsites = 2
 nkraus = (2^nsites)^2
 bonddim = 8
 sites = siteinds("S=1/2", nsites)
-Kindex = Index(nkraus, "K index")
-psites = prime(sites)
-K = randomITensor(ComplexF64, sites, psites, Kindex)
+krausidx = Index(nkraus, "Kraus")
+K = randomITensor(ComplexF64, sites, prime(sites), krausidx)
 
-Cs, ops = paulidecomp(K, sites, psites)
+K_projs_real, K_projs_imag, labels = paulidecomp(K, sites)
 
-norms = frobneiusnorm(K, Kindex)
+norms = frobneiusnorm(K, krausidx)
