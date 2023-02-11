@@ -129,7 +129,7 @@ end
 
 function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
     max_inner_dim::Union{Nothing,Int}=nothing, random_type::String="Haar",
-    ε::Real=0, benchmark::Bool=false)
+    ε::Real=0, benchmark::Bool=false, normalize_ρ::Bool=false)
 
     # Housekeeping 
     L = length(ψ)
@@ -152,6 +152,8 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         state_entanglement = zeros(Float64, T)
         operator_entanglement = zeros(Float64, T, L - 3)
         trace = zeros(Float64, T)
+        lognegs = zeros(Float64, T, L)
+        MIs = zeros(Float64, T, L)
     end
 
     ## Transform ψ into an MPDO ##
@@ -171,6 +173,10 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             # Convert MPDO into density matrix 
             ρ = density_matrix_mpdo(ψ)
 
+            # trace
+            trace[t] = real(tr(ρ))
+            @show trace[t]
+
             # The maximum link dimension
             @show maxlinkdim(ρ)
 
@@ -178,6 +184,9 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L / 2)))
             SR2 = second_Renyi_entropy(ρ_A)
             state_entanglement[t] = real(SR2)
+            if normalize_ρ
+                state_entanglement[t] *= trace[t]
+            end
             @show real(SR2)
 
             # Calculate the operator entropy
@@ -189,9 +198,24 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             operator_entanglement[t, :] = SvN
             @show SvN
 
-            # trace
-            trace[t] = real(tr(ρ))
-            @show trace[t]
+            # Compute ρ_A, ρ_B, and ρ_AB for two sites A and B 
+            # 4 is arbitrary, but going higher is challenging computationally 
+            A = 1
+            for B in collect(2:L)
+                ρAB = twosite_reduced_density_matrix(ρ, A, B)
+                ρA = reduced_density_matrix(ρ, [A])
+                ρB = reduced_density_matrix(ρ, [B])
+
+                # Compute the logarithmic negativity
+                lognegs[t, B] = logarithmic_negativity(ρAB, [1])
+
+                # Compute the mutual information 
+                MIs[t, B] = mutual_information(ρA, ρB, ρAB)
+
+            end
+            @show lognegs[t, :]
+            @show MIs[t, :]
+
         end
 
         ## Apply a layer of unitary evolution to the MPS ##

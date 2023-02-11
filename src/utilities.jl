@@ -22,11 +22,75 @@ function density_matrix(ψ::MPS)
     return outer(ψ, ψdag)
 end
 
-"""
-EN(ρ) = log₂||ρ^(Tᵦ
-"""
-function logarithmic_negativity(ρ::MPO)
+function complement(L::Int, B::Vector{Int})
+    setdiff(collect(1:L), B)
+end
 
+"""
+EN(ρ_AB) = log₂||ρ_AB^(T_B)||₁
+"""
+function logarithmic_negativity(ρ::MPO, B::Vector{Int})
+
+    A = complement(length(ρ), B)
+
+    Linds = physical_indices(ρ)
+    Rinds = copy(Linds)
+
+    # take the partial transpose for the subset in B 
+    Linds[B] .= prime.(Linds[B])
+    Rinds[A] .= prime.(Rinds[A])
+
+    ## NOTE: WE NEED TO TURN ρ INTO A TENSOR!! BUT THAT MIGHT BE HUGE! ## 
+    # First, we should take the reduced density matrix # 
+    T = prod(ρ)
+    D, U = eigen(T, Linds, Rinds)
+
+    # Compute the nuclear (trace) norm
+    return sum(abs.(array(D)))
+end
+
+function twosite_reduced_density_matrix(ρ::MPO, A::Int, B::Int)
+    @assert A != B
+    if B < A
+        A, B = B, A
+    end
+
+    # Trace out the indices on either side of A and B 
+    # Keep only the indices between A and B, including A and B 
+    ρAB = reduced_density_matrix(ρ, collect(A:B))
+
+    # Now trace out the indices between A and B 
+    if B - A > 1
+        ρAB = partial_trace(ρAB, collect(A+1:B-1), "left")
+    end
+
+    return ρAB
+end
+
+function von_neumann_entropy(ρ::MPO)
+    sites = physical_indices(ρ)
+    T = prod(ρ)
+    U, S, V = svd(T, sites, prime.(sites))
+    SvN = 0.0
+    for n = 1:ITensors.dim(S, 1)
+        p = S[n, n]^2
+        SvN -= p * log(p)
+    end
+    return SvN
+end
+
+function mutual_information(ρA::MPO, ρB::MPO, ρAB::MPO)
+    SA = von_neumann_entropy(ρA)
+    SB = von_neumann_entropy(ρB)
+    SAB = von_neumann_entropy(ρAB)
+    return SA + SB - SAB
+end
+
+function mutual_information(ρ::MPO, A::Int, B::Int)
+    ρAB = twosite_reduced_density_matrix(ρ, A, B)
+    ρA = reduced_density_matrix(ρ, [A])
+    ρB = reduced_density_matrix(ρ, [B])
+    mutual_information(ρA, ρB, ρAB)
 end
 
 function entanglement_entropy(ψ::MPS; b=nothing)

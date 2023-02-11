@@ -11,7 +11,8 @@ L = 9
 T = 100
 εs = [0.001]
 maxdim = 16
-max_inner_dims = [20]
+max_inner_dims = [32]
+normalize_ρ = true
 
 # Initialize the wavefunction to product state (all 0)
 ψ0 = initialize_wavefunction(L=L)
@@ -26,7 +27,8 @@ for ε in εs
     for max_inner_dim in max_inner_dims
         @show ε, max_inner_dim
         # Apply the MPDO circuit
-        _, state_entanglement, op_entanglement, trace = apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim, max_inner_dim=max_inner_dim, benchmark=true)
+        _, state_entanglement, op_entanglement, trace = apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim,
+            max_inner_dim=max_inner_dim, benchmark=true, normalize_ρ=normalize_ρ)
         push!(stents, state_entanglement)
         push!(opents, op_entanglement)
         push!(ts, trace)
