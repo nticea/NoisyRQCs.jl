@@ -23,22 +23,20 @@ Computes matrix of pauli decomposition coefficients of tensor on given indices a
 C_i = 1/n^2 Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
 """
 function paulidecomp(K, sites)
-    psites = prime.(sites) # we will work with the convention that MPO has primed inds on one side and unprimed on the other
-
     # Pauli operators
     Id = Matrix(I, 2, 2)
     σx = [0.0 1.0
         1.0 0.0]
     σy = [0.0 -1.0im
-        -1.0im 0.0]
+        1.0im 0.0]
     σz = [1.0 0.0
         0.0 -1.0]
     paulis = [Id, σx, σy, σz]
 
     # Build pauli itensors for each site
     sitebases = [
-        [ITensor(pauli, sites[i], psites[i]) for pauli in paulis]
-        for i in eachindex(sites)
+        [ITensor(pauli, site, site') for pauli in paulis]
+        for site in sites
     ]
 
     sitelabels = [
@@ -48,32 +46,18 @@ function paulidecomp(K, sites)
 
     # Build tensor products of all combinations of paulis across sites
     basis = [*(ops...) for ops in Iterators.product(sitebases...)]
-    basis_labels = [*(ops...) for ops in Iterators.product(sitelabels...)]
+    labels = [*(ops...) for ops in Iterators.product(sitelabels...)]
 
     # Compute pauli decomposition coefficients: C_i = 1/2^n Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
     # where n is the number of sites.
     nsites = length(sites)
-    N = 2^nsites # defining some useful constants
-    @show inds(K)
 
-    Cs = (1 / N) .* Ref(K) .* basis
+    Cs = (1 / 2^nsites) .* Ref(K) .* basis
 
-    # for each Ki in the stack of Kraus operators, plot its projection onto the coefficients
-    kraus_dim = ITensors.dim.(inds(Cs[1, 1]))[1] # the kraus dimension
-    K_projs_real = zeros(Float64, kraus_dim, N, N)
-    K_projs_imag = zeros(Float64, kraus_dim, N, N)
-    labels = ["" for _ in 1:kraus_dim, _ in 1:N, _ in 1:N]
-    for c1 in 1:N
-        for c2 in 1:N
-            for i in 1:kraus_dim # iterate through the dimensions of the kraus operator
-                K_projs_real[i, c1, c2] = real(Cs[c1, c2][i])
-                K_projs_imag[i, c1, c2] = imag(Cs[c1, c2][i])
-                labels[i, c1, c2] = "K$(i)" * basis_labels[c1, c2]
-            end
-        end
-    end
+    # Transpose basis for reconstruction
+    recbasis = swapprime.(basis, Ref(1 => 0))
 
-    return K_projs_real, K_projs_imag, labels
+    return Cs, recbasis, labels
 end
 
 function dephasing_noise(sites, ε::Float64)
@@ -136,14 +120,22 @@ function random_noise(sites, nkraus::Int)
     return K
 end
 
-function visualize_paulidecom(K, sites; title::String="Pauli Decomposition", clims::Tuple{Real,Real}=(-1, 1))
-    Kreal, Kimag, labels = paulidecomp(K, sites)
-    numkraus = size(Kreal)[1]
-    ndims = size(Kreal)[2]
+function visualize_paulidecomp(K, sites; title::String="Pauli Decomposition", clims=nothing)
+    Cs, basis, labels = paulidecomp(K, sites)
+
+    # Reshape to 3D array with Kraus index as 3rd dimension
+    coeffsraw = array.(Cs) # Matrix{Vector}
+    nkraus = size(coeffsraw[1, 1])[1]
+    coeffarr = cat([getindex.(coeffsraw, Ref(i)) for i in 1:nkraus]..., dims=3)
+
+    coeffnorms = norm.(coeffarr)
+
+    ndims = size(coeffnorms)[1]
     ps = []
-    for n in 1:numkraus
-        p = heatmap(Kreal[n, :, :] .^ 2 + Kimag[n, :, :] .^ 2, aspect_ratio=:equal, clim=clims, c=:bluesreds, yflip=true)
-        ann = [(j, i, text(labels[n, i, j], :white, :center)) for i in 1:ndims for j in 1:ndims]
+    for n in 1:nkraus
+        p = heatmap(coeffnorms[:, :, n], aspect_ratio=:equal, clims=clims, c=:bluesreds, yflip=true)
+        ann = [(j, i, text("$n" * labels[i, j], :white, :center)) for i in 1:ndims for j in 1:ndims]
+        print(ann)
         p = annotate!(p, ann, linecolor=:white, yflip=:true)
         push!(ps, p)
     end
@@ -153,20 +145,3 @@ function visualize_paulidecom(K, sites; title::String="Pauli Decomposition", cli
 
     return p
 end
-
-# function plotkrausdecomp(K, sites, n, title)
-#     # Calculte pauli decomposition coefficients
-#     coefs, basis, labels = paulidecomp(K, sites)
-
-#     # Transform coefficient tensors into 3D array
-#     projarr = cat([getindex.(array.(coefs), Ref(i)) for i in 1:n]..., dims=3)
-#     projnorms = norm.(projarr)
-
-#     # Plot
-#     ps = [heatmap(projnorms[:, :, i], aspect_ratio=:equal, c=:bluesreds, yflip=true, title=(title * " $i")) for i in 1:n]
-#     return plot(
-#         ps...,
-#         layout=Plots.grid(ceil(Int, n / 2), 2),
-#         size=(500 * (n ÷ 2), 1000)
-#     )
-# end
