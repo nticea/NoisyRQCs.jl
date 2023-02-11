@@ -13,7 +13,7 @@ function initialize_wavefunction(; L::Int)
 end
 
 """
-Helper function to initialize a density matrix from a wavefunction 
+Helper function to initialize a density matrix from a wavefunction
 """
 function density_matrix(ψ::MPS)
     sites = physical_indices(ψ)
@@ -115,8 +115,8 @@ findnearest(A, x) = argmin(abs.(A .- x))
 
 """
 physical_indices(ψ::MPS, idxlist::Vector{Int}, tag::String)
-    Given an INTEGER list of desired indices, 
-    return a list of the corresponding PHYSICAL Index (struct) of the MPS  
+    Given an INTEGER list of desired indices,
+    return a list of the corresponding PHYSICAL Index (struct) of the MPS
 """
 function physical_indices(ψ::Union{MPS,MPO}, sitelist::Vector{Int}; tag::String="Site")
     [getfirst(x -> hastags(x, tag), inds(ψ[s])) for s in sitelist]
@@ -140,20 +140,20 @@ function maxlinkdim(ψ::MPS)
     return ITensors.dim(linkind(ψ, Lmid))
 end
 
-# here we are KEEPING the indices in indslist 
+# here we are KEEPING the indices in indslist
 function reduced_density_matrix(ρ::MPO, indslist::Vector{Int})
     # the indices to keep must be a continuous chunk
     sort!(indslist)
     @assert indslist == collect(indslist[begin]:indslist[end])
     L = length(ρ)
 
-    # first, trace out the indices on the LHS  
+    # first, trace out the indices on the LHS
     linds = collect(1:indslist[begin]-1)
     if length(linds) > 0
         ρ = partial_trace(ρ, linds, "left")
     end
 
-    # now trace out the indices on the RHS 
+    # now trace out the indices on the RHS
     rinds = collect(indslist[end]+1:L) .- length(linds)
     if length(rinds) > 0
         ρ = partial_trace(ρ, rinds, "right")
@@ -162,10 +162,10 @@ function reduced_density_matrix(ρ::MPO, indslist::Vector{Int})
     return ρ
 end
 
-# here we are TRACING OUT the indices in indslist 
+# here we are TRACING OUT the indices in indslist
 function partial_trace(ρ::MPO, indslist::Vector{Int}, side::String)
     ρ = copy(ρ)
-    s = physical_indices(ρ) # these are the physical sites 
+    s = physical_indices(ρ) # these are the physical sites
 
     if side == "left"
         border_idx = indslist[end] + 1
@@ -208,24 +208,24 @@ end
 function combine_indices(ρ::MPO)
     ρ = copy(ρ)
     orthogonalize!(ρ, 1)
-    # Combine the primed and unprimed indices at each site to create a super MPS 
+    # Combine the primed and unprimed indices at each site to create a super MPS
     sites = siteinds(ρ)
     for i in 1:length(ρ)
         C = combiner(sites[i]...)
         ρ[i] *= C
     end
 
-    # Put this data into an MPS struct 
+    # Put this data into an MPS struct
     ψ = MPS(ρ.data)
-    # reset_ortho_lims!(ψ) 
+    # reset_ortho_lims!(ψ)
 
     return ψ
 end
 
 """
 physical_indices(ψ::MPS, idxlist::Vector{Int}, tag::String)
-    Given an INTEGER list of desired indices, 
-    return a list of the corresponding PHYSICAL Index (struct) of the MPS  
+    Given an INTEGER list of desired indices,
+    return a list of the corresponding PHYSICAL Index (struct) of the MPS
 """
 function physical_indices(ψ::Union{MPS,MPO}, sitelist::Vector{Int}; tag::String="Site")
     [getfirst(x -> hastags(x, tag), inds(ψ[s])) for s in sitelist]
@@ -268,21 +268,22 @@ function siteindT(T::ITensor)
     taginds(T, "Site")
 end
 
-function isapprox(T1::ITensor, T2::ITensor; atol=1e-6)
-    # permute indices to match up 
-    if inds(T1) != inds(T2)
-        T1 = permute(T1, inds(T2))
-    end
+# ITensors already has an isapprox function
+# function (T1::ITensor, T2::ITensor; atol=1e-6)
+#     # permute indices to match up
+#     if inds(T1) != inds(T2)
+#         T1 = permute(T1, inds(T2))
+#     end
 
-    # extract elements and compare
-    T1_arr = [array(T1)...]
-    T2_arr = [array(T2)...]
+#     # extract elements and compare
+#     T1_arr = [array(T1)...]
+#     T2_arr = [array(T2)...]
 
-    for (t1, t2) in zip(T1_arr, T2_arr)
-        @assert isapprox.(t1, t2, atol=atol)
-    end
-    return true
-end
+#     for (t1, t2) in zip(T1_arr, T2_arr)
+#         @assert isapprox.(t1, t2, atol=atol)
+#     end
+#     return true
+# end
 
 function save_structs(struc, path::String)
     function Name(arg)
@@ -293,17 +294,17 @@ function save_structs(struc, path::String)
         n = Name(fn)
         d = getfield(struc, fn)
 
-        # If the file already exists, then we either append to it or overwrite 
+        # If the file already exists, then we either append to it or overwrite
         if isfile(path)
             h5open(path, "r+") do file
-                if haskey(file, n) #if key already exists, we want to rewrite 
+                if haskey(file, n) #if key already exists, we want to rewrite
                     delete_object(file, n)
                     write(file, n, d)
                 else
                     write(file, n, d)
                 end
             end
-        else # If the file does not exist, create it 
+        else # If the file does not exist, create it
             h5open(path, "w") do file
                 write(file, n, d)
             end
