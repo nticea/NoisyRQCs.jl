@@ -13,7 +13,7 @@ Tests the channel approximation function.
 """
 
 # 1. generate random density matrices
-nsites = 3
+nsites = 2
 bonddim = 100
 sites = siteinds("Qubit", nsites)
 psi = randomMPS(ComplexF64, sites, linkdims=bonddim)
