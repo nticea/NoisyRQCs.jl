@@ -135,7 +135,6 @@ function visualize_paulidecomp(K, sites; title::String="Pauli Decomposition", cl
     for n in 1:nkraus
         p = heatmap(coeffnorms[:, :, n], aspect_ratio=:equal, clims=clims, c=:bluesreds, yflip=true)
         ann = [(j, i, text("$n" * labels[i, j], :white, :center)) for i in 1:ndims for j in 1:ndims]
-        print(ann)
         p = annotate!(p, ann, linecolor=:white, yflip=:true)
         push!(ps, p)
     end
