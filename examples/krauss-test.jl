@@ -7,6 +7,7 @@ using ITensors
 include("../src/circuit.jl")
 include("../src/utilities.jl")
 include("../src/approxchannel.jl")
+include("../src/kraus.jl")
 
 """
 Tests the channel approximation function.
@@ -41,11 +42,11 @@ compl = +([Ki' * Ki for Ki in eachslice(Ks, dims=3)]...)
 @assert compl ≈ I "Kraus array not complete!"
 
 # Transform Kraus operator into tensor
-krausidx = Index(last(size(Ks)), "Kraus")
+krausidx = Index(last(size(Ks)), KRAUS_TAG)
 Kraw = toITensor(Ks, prime.(sites), sites, krausidx)
 
 # Put Kraus tensor into canonical form
-K = getcanonicalkraus(Kraw, krausidx)
+K = getcanonicalkraus(Kraw)
 
 # Check completeness with tensors
 Kdag = swapprime(dag(K), 0 => 1) * δ(krausidx, krausidx')

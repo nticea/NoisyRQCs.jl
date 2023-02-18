@@ -53,17 +53,6 @@ function toITensor(A, inds1, inds2, otherinds...)
 end
 
 """
-Transform Kraus operator tensor to canonical form with SVD. The quantum channel defined
-by the set of Kraus operators K_i is invariant under unitary transformation on the virtual
-index. This allows us to SVD the Kraus tensor on the virtual index and drop the U tensor.
-"""
-function getcanonicalkraus(Ks, virtualidx)
-    U, S, V = svd(Ks, virtualidx)
-    sindex = uniqueind(S, V)
-    return δ(virtualidx, sindex) * S * V
-end
-
-"""
 Approximate a given density matrix with a quantum channel applied to a initial density
 matrix. This is done by using non-linear optimization to finding optimal Kraus
 operators.
@@ -71,7 +60,7 @@ operators.
 min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
 s.t.    ∑ᵢKᵢ†Kᵢ = I
 """
-function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
+function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing, silent=false)
     @assert size(ρ̃) == size(ρ) "Dimensions of ρ and ρ̃ must match"
     ndim = first(size(ρ))
     @assert ispow2(ndim) "Dimension of density matrix must be a power of 2"
@@ -85,6 +74,7 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
 
     # Build Krauss operator variables
     model = Model(Ipopt.Optimizer)
+    silent ? set_silent(model) : nothing
     # complex array variables are not currently supported, so have to reshape
     nqubits = floor(Int64, log(2, ndim))
     maxnkraus = (2^nqubits)^2
@@ -102,18 +92,6 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
 
     # Define Krauss operators contraint: ∑ᵢKᵢ†Kᵢ = I
     @constraint(model, sum(K' * K for K in eachslice(Ks, dims=3)) .== I)
-
-    # # Ensure that the Kraus operators are Hermitian
-    # for i in 1:nkraus
-    #     K = Ks[:, :, i]
-    #     for x in 1:ndim
-    #         for y in 1:ndim
-    #             if x < y
-    #                 @constraint(model, K[x, y] == K'[x, y])
-    #             end
-    #         end
-    #     end
-    # end
 
     # Find the difference between the approximation and tsvd matrix and compute the
     # Frobenius norm: ∑ᵢKᵢρKᵢ† - ρ̃.
@@ -145,13 +123,5 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
 
     optloss = objective_value(model)
 
-    @show initloss
-    @show optloss
-
     return value.(Ks), optloss, initloss, iterdata, model
 end
-
-
-
-
-# TODO: functions to: reshape matrix to tensor

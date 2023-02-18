@@ -4,6 +4,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 include("../src/lagrange.jl")
 include("../src/utilities.jl")
 include("../src/channel-analysis.jl")
+include("../src/kraus.jl")
 
 using Plots
 using Images, ImageTransformations

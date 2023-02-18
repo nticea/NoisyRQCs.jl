@@ -60,66 +60,18 @@ function paulidecomp(K, sites)
     return Cs, recbasis, labels
 end
 
-function dephasing_noise(sites, ε::Float64)
-    CS = combiner(sites...) # make a combiner tensor for the inds
-    cS = combinedind(CS) # make a new label for the combined indices
-
-    # Make the kraus operators
-    Id = Matrix(I, 2, 2)
-    σx = [0.0 1.0
-        1.0 0.0]
-    σy = [0.0 -1.0im
-        -1.0im 0.0]
-    σz = [1.0 0.0
-        0.0 -1.0]
-
-    Ids = sqrt(1 - ε) .* copy(Id)
-    σxs = sqrt(ε / 3) .* copy(σx)
-    σys = sqrt(ε / 3) .* copy(σy)
-    σzs = sqrt(ε / 3) .* copy(σz)
-
-    for _ in 2:length(sites)
-        # Build up the total operator
-        Ids = Ids ⊗ Id
-        σxs = σxs ⊗ σx
-        σys = σys ⊗ σy
-        σzs = σzs ⊗ σz
-    end
-
-    # Stack them together
-    K_elems = cat(collect(Ids), collect(σxs), collect(σys), collect(σzs), dims=3)
-
-    # Turn this into an ITensor with the appropriate indices
-    sum_idx = Index(4, tags="Kraus")
-    KC = ITensor(K_elems, cS, prime(cS), sum_idx)
-    K = KC * CS * prime(CS)
-    return K
+"""
+Reshape a 2D matrix of 1D tensors to a 3D array
+"""
+function tensmatrix_to_arr(Ts::Matrix{ITensor})
+    coeffsraw = array.(Ts) # Matrix{Vector}
+    n3d = size(coeffsraw[1, 1])[1]
+    return cat([getindex.(coeffsraw, Ref(i)) for i in 1:n3d]..., dims=3)
 end
 
-function random_noise(sites, nkraus::Int)
-    CS = combiner(sites...) # make a combiner tensor for the inds
-    cS = combinedind(CS) # make a new label for the combined indices
-
-    # Make the kraus operators
-    ms = [rand(Complex{Float64}, 2, 2) for _ in 1:nkraus]
-
-    for _ in 2:length(sites)
-        # Build up the total operator
-        for i in 1:length(ms)
-            ms[i] = ms[i] ⊗ rand(Complex{Float64}, 2, 2)
-        end
-    end
-
-    # Stack them together
-    K_elems = cat([collect(m) for m in ms]..., dims=3)
-
-    # Turn this into an ITensor with the appropriate indices
-    sum_idx = Index(nkraus, tags="Kraus")
-    KC = ITensor(K_elems, cS, prime(cS), sum_idx)
-    K = KC * CS * prime(CS)
-    return K
-end
-
+"""
+Visualize Pauli decomposition of tensor on sites
+"""
 function visualize_paulidecomp(K, sites; title::String="Pauli Decomposition", clims=nothing)
     Cs, basis, labels = paulidecomp(K, sites)
 
