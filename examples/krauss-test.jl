@@ -12,6 +12,17 @@ include("../src/kraus.jl")
 """
 Tests the channel approximation function.
 """
+function checkcompleteness(K, sites)
+    # Put Kraus tensor into canonical form
+    # K = getcanonicalkraus(K)
+    krausidx = getkrausind(K)
+
+    # Check completeness with tensors
+    Kdag = swapprime(dag(K), 0 => 1) * δ(krausidx, krausidx')
+    complete = apply(Kdag, K)
+    delt = *([δ(ind, ind') for ind in sites]...)
+    @assert complete ≈ delt "Kraus tensor fails completeness condition"
+end
 
 # 1. generate random density matrices
 nsites = 2
@@ -43,19 +54,24 @@ compl = +([Ki' * Ki for Ki in eachslice(Ks, dims=3)]...)
 
 # Transform Kraus operator into tensor
 krausidx = Index(last(size(Ks)), KRAUS_TAG)
-Kraw = toITensor(Ks, prime.(sites), sites, krausidx)
+K = toITensor(Ks, prime.(sites), sites, krausidx)
 
-# Put Kraus tensor into canonical form
-K = getcanonicalkraus(Kraw)
-
-# Check completeness with tensors
-Kdag = swapprime(dag(K), 0 => 1) * δ(krausidx, krausidx')
-complete = apply(Kdag, K)
-delt = *([δ(ind, ind') for ind in sites]...)
-@assert complete ≈ delt "Kraus tensor fails completeness condition"
-
-# Test channel, make sure loss it the same
+# Make sure loss is the same
 approx = apply(K, rho, apply_dag=true)
 @assert sum(norm.(array(*(approx...) - *(trho...))) .^ 2) ≈ optloss "Channel loss does not match optimization value!"
 
-print("Completeness and channel tests passed!")
+checkcompleteness(K, sites)
+print("Truncation-approximating noise channel passed tests!")
+
+# Test generated channels
+sites = siteinds("Qubit", 3)
+
+print("Testing depolarizing noise...")
+K = depolarizing_noise(sites, 0.5)
+checkcompleteness(K, sites)
+print("Depolarizing noise channel passed tests!")
+
+print("Testing dephasing noise...")
+K = dephasing_noise(sites, 0.5)
+checkcompleteness(K, sites)
+print("Dephasing noise channel passed tests!")
