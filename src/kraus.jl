@@ -1,13 +1,15 @@
 
 using ITensors
 
+include("channel-analysis.jl")
+
 const KRAUS_TAG = "Kraus"
 
 function getkrausind(K)
     allinds = inds(K)
     return allinds[findfirst(ind -> hastags(ind, KRAUS_TAG), allinds)]
 end
-s
+
 """
 Transform Kraus operator tensor to canonical form with SVD. The quantum channel defined
 by the set of Kraus operators K_i is invariant under unitary transformation on the virtual
@@ -56,26 +58,33 @@ function dephasing_noise(sites, ε::Float64)
     return K
 end
 
-function random_noise(sites, nkraus::Int)
-    CS = combiner(sites...) # make a combiner tensor for the inds
-    cS = combinedind(CS) # make a new label for the combined indices
+"""
+Build depolarizing channel Kraus operator for single qubit site.
+"""
+function single_site_depolarizing_noise(site, ϵ)
+    # Build pauli operators for the site: [I, σx, σy, σz]
+    paulis = buildpaulibasis(site)
 
-    # Make the kraus operators
-    ms = [rand(Complex{Float64}, 2, 2) for _ in 1:nkraus]
+    # Scale paulis with given ϵ
+    coeffI = sqrt(1 - 3ϵ / 4)
+    coeffx = sqrt(ϵ) / 4
+    coefs = [coeffI, coeffx, coeffx, coeffx]
+    ops = coefs .* paulis
 
-    for _ in 2:length(sites)
-        # Build up the total operator
-        for i in 1:length(ms)
-            ms[i] = ms[i] ⊗ rand(Complex{Float64}, 2, 2)
-        end
-    end
+    # Combine operators into tensor
+    krausind = Index(4, tags=KRAUS_TAG)
+    K = sum(i -> ops[i] * onehot(krausind => i), eachindex(ops))
+    return K
+end
 
-    # Stack them together
-    K_elems = cat([collect(m) for m in ms]..., dims=3)
+function depolarizing_noise(sites, ϵ)
+    # Build depolarizing channel for each site
+    Ks = single_site_depolarizing_noise.(sites, Ref(0.1))
 
-    # Turn this into an ITensor with the appropriate indices
-    sum_idx = Index(nkraus, tags=KRAUS_TAG)
-    KC = ITensor(K_elems, cS, prime(cS), sum_idx)
-    K = KC * CS * prime(CS)
+    # Make tensor product of single-site channels. Prime kraus inds to prevent contraction
+    primedKs = [setprime(Ks[i], i - 1, tags=KRAUS_TAG) for i in eachindex(Ks)]
+    krausinds = getkrausind.(primedKs)
+    combinedkrausind = combiner(krausinds..., tags=KRAUS_TAG)
+    K = *(primedKs...) * combinedkrausind
     return K
 end
