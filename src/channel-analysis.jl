@@ -18,12 +18,7 @@ function frobneiusnorm(K, onindices...)
     return sqrt.(summed)
 end
 
-"""
-Computes matrix of pauli decomposition coefficients of tensor on given indices and their primes
-C_i = 1/n^2 Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
-"""
-function paulidecomp(K, sites)
-    # Pauli operators
+function buildpaulibasis(site)
     Id = Matrix(I, 2, 2)
     σx = [0.0 1.0
         1.0 0.0]
@@ -31,13 +26,19 @@ function paulidecomp(K, sites)
         1.0im 0.0]
     σz = [1.0 0.0
         0.0 -1.0]
+
     paulis = [Id, σx, σy, σz]
 
+    return [ITensor(pauli, site, site') for pauli in paulis]
+end
+
+"""
+Computes matrix of pauli decomposition coefficients of tensor on given indices and their primes
+C_i = 1/n^2 Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
+"""
+function paulidecomp(K, sites)
     # Build pauli itensors for each site
-    sitebases = [
-        [ITensor(pauli, site, site') for pauli in paulis]
-        for site in sites
-    ]
+    sitebases = buildpaulibasis.(sites)
 
     sitelabels = [
         [l for l in ["I", "x", "y", "z"]]

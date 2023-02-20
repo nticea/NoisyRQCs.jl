@@ -67,7 +67,7 @@ function single_site_depolarizing_noise(site, ϵ)
 
     # Scale paulis with given ϵ
     coeffI = sqrt(1 - 3ϵ / 4)
-    coeffx = sqrt(ϵ) / 4
+    coeffx = sqrt(ϵ) / 2
     coefs = [coeffI, coeffx, coeffx, coeffx]
     ops = coefs .* paulis
 
