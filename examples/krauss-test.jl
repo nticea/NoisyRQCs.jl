@@ -61,17 +61,17 @@ approx = apply(K, rho, apply_dag=true)
 @assert sum(norm.(array(*(approx...) - *(trho...))) .^ 2) ≈ optloss "Channel loss does not match optimization value!"
 
 checkcompleteness(K, sites)
-print("Truncation-approximating noise channel passed tests!")
+println("Truncation-approximating noise channel passed tests!")
 
 # Test generated channels
 sites = siteinds("Qubit", 3)
 
-print("Testing depolarizing noise...")
+println("Testing depolarizing noise...")
 K = depolarizing_noise(sites, 0.5)
 checkcompleteness(K, sites)
-print("Depolarizing noise channel passed tests!")
+println("Depolarizing noise channel passed tests!")
 
-print("Testing dephasing noise...")
+println("Testing dephasing noise...")
 K = dephasing_noise(sites, 0.5)
 checkcompleteness(K, sites)
-print("Dephasing noise channel passed tests!")
+println("Dephasing noise channel passed tests!")
