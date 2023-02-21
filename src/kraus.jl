@@ -79,7 +79,7 @@ end
 
 function depolarizing_noise(sites, ϵ)
     # Build depolarizing channel for each site
-    Ks = single_site_depolarizing_noise.(sites, Ref(0.1))
+    Ks = single_site_depolarizing_noise.(sites, Ref(ϵ))
 
     # Make tensor product of single-site channels. Prime kraus inds to prevent contraction
     primedKs = [setprime(Ks[i], i - 1, tags=KRAUS_TAG) for i in eachindex(Ks)]
