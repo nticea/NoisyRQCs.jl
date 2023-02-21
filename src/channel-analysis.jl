@@ -88,17 +88,21 @@ function plot_paulidecomp(pdnorms; clims=nothing, title="Pauli Decomposition")
 
     ps = []
 
-    ny = 4
-    nx = ceil(Int, nkraus / ny)
+    nx = 4
+    ny = ceil(Int, nkraus / nx)
 
     height = 250 * ny
-    width = 250 * nx + 20 * nx^2 + 20
+    width = 250 * nx * 1.35
 
     for n in 1:nkraus
+        data = pdnorms[:, :, n]
+        maxval = maximum(data)
+        computedclims = isnothing(clims) ? (0, maxval) : clims
+        Plots.gr_cbar_width[] = 0.005
         p = heatmap(
-            pdnorms[:, :, n],
+            data,
             c=:blues,
-            clims=clims,
+            clims=computedclims,
             title=n,
             framestyle=:none,
         )
@@ -106,13 +110,16 @@ function plot_paulidecomp(pdnorms; clims=nothing, title="Pauli Decomposition")
         p = annotate!(p, ann, linecolor=:white, yflip=true)
         push!(ps, p)
     end
-
-    plot(
+    l = @layout [
+        title{0.001h}
+        grid(ny, nx)
+    ]
+    return plot(
+        plot(title=title, grid=false, showaxis=false, ticks=false),
         ps...,
         size=(width, height),
-        layout=(ny, nx),
-        plot_title=title,
-        padding=5 * Plots.mm
+        layout=l,
+        topmargin=4 * Plots.mm
     )
 end
 
