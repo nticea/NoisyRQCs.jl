@@ -5,11 +5,14 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using ITensors
 using Plots
 using Parameters
+using DataFrames
+using StatsPlots
 
 include("../src/circuit.jl")
 include("../src/utilities.jl")
 include("../src/approxchannel.jl")
 include("../src/channel-analysis.jl")
+include("../src/kraus.jl")
 
 @with_kw struct TruncParams
     nsites::Int
@@ -36,21 +39,11 @@ function centerrange(n, size)
     return first:last
 end
 
-params = TruncParams(;
-    nsites=6,
-    bonddim=100,
-    nkraussites=2,
-    nbondstrunc=1,
-    truncatedbonddim=1,
-    nkraus=4
-)
-
 function runtruncationapprox(params::TruncParams)
     @unpack nsites, bonddim, nkraussites, nbondstrunc, truncatedbonddim, nkraus = params
 
     # Generate random density
     sites = siteinds("Qubit", nsites)
-    print("")
     psi = normalize(randomMPS(ComplexF64, sites, linkdims=bonddim))
     rho = density_matrix(psi)
 
@@ -68,15 +61,13 @@ function runtruncationapprox(params::TruncParams)
     # Find approximate quantum channel
     ρ = Matrix(reducedrho)
     ρ̃ = Matrix(truncrho)
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃, nkraus=nkraus)
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃, nkraus=nkraus, silent=true)
 
     lossratio = (initloss - optloss) / initloss
-    @show lossratio
 
     # Transform Kraus operator into tensor
-    krausidx = Index(last(size(Ks)), "Kraus")
-    Kraw = toITensor(Ks, prime.(kraussites), kraussites, krausidx)
-    K = getcanonicalkraus(Kraw, krausidx)
+    krausidx = Index(last(size(Ks)), KRAUS_TAG)
+    K = toITensor(Ks, prime.(kraussites), kraussites, krausidx)
 
     return TruncResults(;
         reducedrho,
@@ -89,39 +80,69 @@ function runtruncationapprox(params::TruncParams)
     )
 end
 
-res = runtruncationapprox(params)
-@unpack K, krausidx, kraussites = res
+function buildnormsdf(normslist)
+    nkraus = size(first(normslist))[1]
+    cols = string.(collect(1:nkraus))
+    normsdata = DataFrame([getindex.(normslist, i) for i in 1:nkraus], cols, copycols=false)
+    normsdata.n = axes(normsdata, 1)
+    normsdf = stack(normsdata, cols, variable_name="krausind", value_name="relnorm")
+    normsdf.krausind = parse.(Int, normsdf.krausind)
+    return normsdf
+end
 
-# Get norm distribution. The U should be a diagonal matrix with entries with norm 1.
-U, S, V = svd(K, krausidx)
-mags = array(diag(S))
-relmags = mags / sum(mags)
-p = bar(
-    relmags,
-    ylim=[0, 1],
-    ylabel="Relative magnitude",
-    xlabel="Kraus operators",
-    title="Relative magnitudes of Kraus operators",
-    legend=:none,
+function plotnorms(normsdf, type::String)
+    @df normsdf boxplot(
+        :krausind,
+        :relnorm,
+        ylabel="Relative magnitude",
+        xlabel="Kraus operators",
+        title="Relative magnitudes of $type Kraus operators",
+        legend=:none,
+        titlefont=font(11),
+    )
+end
+
+channelparams = TruncParams(;
+    nsites=6,
+    bonddim=100,
+    nkraussites=2,
+    nbondstrunc=1,
+    truncatedbonddim=1,
+    nkraus=4
 )
-display(p)
 
-# Plot pauli decompositions
-p = visualize_paulidecomp(K, kraussites, title="Pauli decomposition for truncation channel")
-display(p)
+# Truncation Channel
+ntruncsamples = 200
 
-"""
-Ideas:
+pdecomps = []
+relnorms = []
+for _ in 1:ntruncsamples
+    @unpack K, kraussites, lossratio = runtruncationapprox(channelparams)
+    csarr, relmags = analyzekraus(K, kraussites)
+    push!(pdecomps, csarr)
+    push!(relnorms, relmags)
+end
 
-Average over many MPDOs
+# Relative norms
+relnormsdf = buildnormsdf(relnorms)
+plotnorms(relnormsdf, "truncation-approximating")
 
-Look at:
-- distribution of norms
-- clustering of pauli decompositions vs random noise
+# Pauli Decomposition
+pdplots = []
+pdarr = cat(pdecomps..., dims=4)
+pdnorms = norm.(pdarr)
+pdmean = mean(pdnorms, dims=4)
+push!(pdplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means", clims=:auto))
+push!(pdplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means (zeroed)"))
+pdstd = std(pdnorms, dims=4)
+push!(pdplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std", clims=:auto))
+push!(pdplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std (zeroed)"))
+pdstdratio = pdstd ./ pdmean
+push!(pdplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio", clims=:auto))
+push!(pdplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio (zeroed)"))
 
-optimal loss with 2 vs 4 site Kraus operators
-
-difference in entanglement entropy between truncated and approximation
-
-different truncation dimensions
-"""
+plot(
+    pdplots...,
+    layout=(length(pdplots), 1),
+    size=(1450, length(pdplots) * 300)
+)
