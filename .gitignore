@@ -25,3 +25,5 @@ Manifest.toml
 
 # ignore output data
 *.h5
+*.png
+*.jld2

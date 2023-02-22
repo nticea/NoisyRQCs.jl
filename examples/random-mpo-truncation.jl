@@ -7,6 +7,7 @@ using Plots
 using Parameters
 using DataFrames
 using StatsPlots
+using FileIO, JLD2
 
 include("../src/circuit.jl")
 include("../src/utilities.jl")
@@ -56,6 +57,9 @@ function runtruncationapprox(params::TruncParams)
     # Make truncated density matrix
     truncrange = centerrange(nkraussites, nbondstrunc + 1)
     truncrho = copy(reducedrho)
+    # save initial dimensions of truncated links
+    linkstotrunc = linkind.(Ref(truncrho), truncrange[1:end-1])
+    initdimstrunc = NDTensors.dim.(linkstotrunc)
     NDTensors.truncate!(truncrho, maxdim=truncatedbonddim, site_range=truncrange)
 
     # Find approximate quantum channel
@@ -76,7 +80,7 @@ function runtruncationapprox(params::TruncParams)
         krausidx,
         kraussites,
         lossratio,
-        initdimstrunc=[]
+        initdimstrunc
     )
 end
 
@@ -102,6 +106,7 @@ function plotnorms(normsdf, type::String)
     )
 end
 
+# Compute truncation channels
 channelparams = TruncParams(;
     nsites=6,
     bonddim=100,
@@ -110,39 +115,82 @@ channelparams = TruncParams(;
     truncatedbonddim=1,
     nkraus=4
 )
+ntruncsamples = 20
+results = [runtruncationapprox(channelparams) for _ in 1:ntruncsamples]
+results = vcat(results, loadedresults) # uncomment to save previous results
 
-# Truncation Channel
-ntruncsamples = 200
+# save results
+datadir = "outputs"
+datafilename = "rand-mpo-data.jld2"
+savefile = joinpath(@__DIR__, "..", datadir, datafilename)
+tosave = Dict("results" => results)
+save(savefile, tosave)
 
-pdecomps = []
-relnorms = []
-for _ in 1:ntruncsamples
-    @unpack K, kraussites, lossratio = runtruncationapprox(channelparams)
-    csarr, relmags = analyzekraus(K, kraussites)
-    push!(pdecomps, csarr)
-    push!(relnorms, relmags)
-end
+# load data
+savedata = load(savefile)
+loadedresults = savedata["results"]
+
+# Loss ratios
+lossratios = [r.lossratio for r in loadedresults]
+histogram(
+    lossratios,
+    title="Loss ratios",
+    normalize=:pdf,
+    xlabel="Loss ratio",
+    ylabel="count",
+    legend=false
+)
+savefig(joinpath(@__DIR__, "..", datadir, "loss"))
+
+
+# run analysis
+analyses = [analyzekraus(r.K, r.kraussites) for r in loadedresults]
+pdecomps = [a[1] for a in analyses]
+relnorms = [a[2] for a in analyses]
 
 # Relative norms
 relnormsdf = buildnormsdf(relnorms)
 plotnorms(relnormsdf, "truncation-approximating")
+savefig(joinpath(@__DIR__, "..", datadir, "norms"))
 
-# Pauli Decomposition
-pdplots = []
+# Pauli Decomposition means
+meanplots = []
 pdarr = cat(pdecomps..., dims=4)
 pdnorms = norm.(pdarr)
 pdmean = mean(pdnorms, dims=4)
-push!(pdplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means", clims=:auto))
-push!(pdplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means (zeroed)"))
+push!(meanplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means", clims=:auto))
+push!(meanplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means (zeroed)"))
 pdstd = std(pdnorms, dims=4)
-push!(pdplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std", clims=:auto))
-push!(pdplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std (zeroed)"))
+push!(meanplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std", clims=:auto))
+push!(meanplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std (zeroed)"))
 pdstdratio = pdstd ./ pdmean
-push!(pdplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio", clims=:auto))
-push!(pdplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio (zeroed)"))
+push!(meanplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio", clims=:auto))
+push!(meanplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio (zeroed)"))
 
 plot(
-    pdplots...,
-    layout=(length(pdplots), 1),
-    size=(1450, length(pdplots) * 300)
+    meanplots...,
+    layout=(length(meanplots), 1),
+    size=(1450, length(meanplots) * 300)
 )
+savefig(joinpath(@__DIR__, "..", datadir, "means"))
+
+
+# Samples
+nsamples = 3
+mininds = partialsortperm(lossratios, 1:nsamples)
+maxinds = partialsortperm(lossratios, 1:nsamples, rev=true)
+sampleinds = [mininds..., reverse(maxinds)...]
+sampleplots = [
+    plot_paulidecomp(
+        norm.(pdecomps[i]),
+        title="Sample $i: loss = $(round(lossratios[i], digits=3))",
+        plotnorms=true
+    )
+    for i in sampleinds
+]
+plot(
+    sampleplots...,
+    layout=(length(sampleplots), 1),
+    size=(1700, length(sampleplots) * 300)
+)
+savefig(joinpath(@__DIR__, "..", datadir, "samples"))
