@@ -1,6 +1,7 @@
 
 using ITensors
 using LinearAlgebra
+using Plots
 using Kronecker: ⊗
 
 """
@@ -31,7 +32,7 @@ end
 function paulibasislabels(n::Int)
     sitelabels = [
         [l for l in ["I", "x", "y", "z"]]
-        for _ in eachindex(sites)
+        for _ in 1:n
     ]
 
     return [*(ops...) for ops in Iterators.product(sitelabels...)]
@@ -80,7 +81,7 @@ function visualize_kraus(K, sites; title::String="Pauli Decomposition", clims=no
     plot_paulidecomp(pdecomp; clims)
 end
 
-function plot_paulidecomp(pdnorms; clims=nothing, title="Pauli Decomposition")
+function plot_paulidecomp(pdnorms; zerolims=false, title="Pauli Decomposition", plotnorms=false)
     nkraus = size(pdnorms)[3]
     ndimens = size(pdnorms)[1]
     nsites = Int(log(2, ndimens))
@@ -97,7 +98,8 @@ function plot_paulidecomp(pdnorms; clims=nothing, title="Pauli Decomposition")
     for n in 1:nkraus
         data = pdnorms[:, :, n]
         maxval = maximum(data)
-        computedclims = isnothing(clims) ? (0, maxval) : clims
+        minval = minimum(data)
+        computedclims = zerolims ? (0, maxval) : (minval, maxval)
         Plots.gr_cbar_width[] = 0.005
         p = heatmap(
             data,
@@ -110,10 +112,28 @@ function plot_paulidecomp(pdnorms; clims=nothing, title="Pauli Decomposition")
         p = annotate!(p, ann, linecolor=:white, yflip=true)
         push!(ps, p)
     end
+
     l = @layout [
         title{0.001h}
         grid(ny, nx)
     ]
+
+    # show a barplot of matrix norms
+    if plotnorms
+        relnorms = [sqrt(sum(norm.(m) .^ 2)) for m in eachslice(pdnorms, dims=3)]
+        normplot = bar(
+            relnorms,
+            titlefont=font(9),
+            legend=:none
+        )
+        ps = vcat(normplot, ps)
+        l = @layout [
+            title{0.001h}
+            n{0.11w} grid(ny, nx)
+        ]
+        width = width + 300
+    end
+
     return plot(
         plot(title=title, grid=false, showaxis=false, ticks=false),
         ps...,
@@ -133,7 +153,7 @@ function analyzekraus(K, sites; usecanonical=true)
     K = usecanonical ? getcanonicalkraus(K) : K
 
     # perform pauli decomposition
-    pdtens, basis, lbls = paulidecomp(K, sites)
+    pdtens, basis, labels = paulidecomp(K, sites)
     pdarr = tensmatrix_to_arr(pdtens)
 
     # Get norm distribution
