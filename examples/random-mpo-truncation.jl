@@ -19,18 +19,19 @@ include("../src/kraus.jl")
     nsites::Int
     bonddim::Int
     nkraussites::Int
+    nsitesreduce::Int = 0
     nbondstrunc::Int
     truncatedbonddim::Int
     nkraus::Int
 end
 
 @with_kw struct TruncResults
-    reducedrho::MPO
+    rho::MPO
     truncrho::MPO
     K::ITensor
-    krausidx::Index
     kraussites::Vector{Index}
-    lossratio::Float64
+    initloss::Float64
+    optloss::Float64
     initdimstrunc::Vector{Int}
 end
 
@@ -40,46 +41,124 @@ function centerrange(n, size)
     return first:last
 end
 
-function runtruncationapprox(params::TruncParams)
-    @unpack nsites, bonddim, nkraussites, nbondstrunc, truncatedbonddim, nkraus = params
+function toarray(T::ITensor, indlists...)::Array
+    combiners = combiner.(filter(!isnothing, indlists))
+    flattened = *(T, combiners...)
+    combinds = combinedind.(combiners)
+    return array(flattened, combinds)
+end
 
-    # Generate random density
-    sites = siteinds("Qubit", nsites)
-    psi = normalize(randomMPS(ComplexF64, sites, linkdims=bonddim))
-    rho = density_matrix(psi)
+function toITensor(A, indlists...)::ITensor
+    combiners = combiner.(filter(!isnothing, indlists))
+    combinedinds = combinedind.(combiners)
+    T = ITensor(A, combinedinds...)
+    return *(T, combiners...)
+end
 
-    # Take subset of sites in the middle. Can choose to trace out other sites
-    # shouldpartialtrace = false TODO: include non-partial trace case
-    krausrange = centerrange(nsites, nkraussites)
-    kraussites = sites[krausrange]
-    reducedrho = reduced_density_matrix(rho, collect(krausrange))
+"""
+leftlinkind(M::MPS, j::Integer)
+leftlinkind(M::MPO, j::Integer)
+Get the link or bond Index connecting the MPS or MPO tensor on site j-1 to site j.
+If there is no link Index, return `nothing`.
+"""
+function leftlinkind(M::ITensors.AbstractMPS, j::Integer)
+    (j > length(M) || j < 2) && return nothing
+    return commonind(M[j-1], M[j])
+end
 
-    # Make truncated density matrix
-    truncrange = centerrange(nkraussites, nbondstrunc + 1)
-    truncrho = copy(reducedrho)
-    # save initial dimensions of truncated links
-    linkstotrunc = linkind.(Ref(truncrho), truncrange[1:end-1])
-    initdimstrunc = NDTensors.dim.(linkstotrunc)
-    NDTensors.truncate!(truncrho, maxdim=truncatedbonddim, site_range=truncrange)
+"""
+Alias for linkind(M::MPS, j::Integer)
+"""
+const rightlinkind = linkind
 
-    # Find approximate quantum channel
-    ρ = Matrix(reducedrho)
-    ρ̃ = Matrix(truncrho)
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃, nkraus=nkraus, silent=true)
+"""
+Finds links one either end of a MPS or MPO slice that are loose
+      |     |
+=> - [_] - [_] - <=
+      |     |
+"""
+function getlooselinks(M::ITensors.AbstractMPS)
+    leftlinks = taginds(M[1], "Link")
+    @assert length(leftlinks) ≤ 2
+    looseleft = getfirst(!=(rightlinkind(M, 1)), leftlinks)
 
-    lossratio = (initloss - optloss) / initloss
+    rightlinks = taginds(M[end], "Link")
+    @assert length(rightlinks) ≤ 2
+    looseright = getfirst(!=(leftlinkind(M, length(M))), rightlinks)
+
+    return looseleft, looseright
+end
+
+"""
+Combine loose links from the ends of a range of an MPS or MPO and contract into a
+tensor.
+   |     |          | |
+- [_] - [_] -  =>  [___]-
+   |     |          | |
+"""
+function combineoutsidelinks(M::ITensors.AbstractMPS)
+    # left and right links may be `nothing`
+    leftlink, rightlink = getlooselinks(M)
+    linkcombiner = combiner(filter(!isnothing, [leftlink, rightlink])...)
+    rhocomb = *(M..., linkcombiner)
+    return rhocomb, linkcombiner
+end
+
+function approxqcmpo(init::MPO, final::MPO; nkraus=nothing)
+    sites = firstsiteinds(init)
+
+    rhocomb, rholinkcomb = combineoutsidelinks(init)
+    trunccomb, trunclinkcomb = combineoutsidelinks(final)
+
+    ρ = toarray(rhocomb, sites, sites', combinedind(rholinkcomb))
+    ρ̃ = toarray(trunccomb, sites, sites', combinedind(trunclinkcomb))
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃; nkraus, silent=true)
 
     # Transform Kraus operator into tensor
     krausidx = Index(last(size(Ks)), KRAUS_TAG)
-    K = toITensor(Ks, prime.(kraussites), kraussites, krausidx)
+    K = toITensor(Ks, sites', sites, krausidx)
+
+    return K, optloss, initloss
+end
+
+function runtruncationapprox(params::TruncParams)
+    @unpack nsites, bonddim, nkraussites, nsitesreduce, nbondstrunc, truncatedbonddim, nkraus = params
+
+    # Generate random density
+    nallsites = nsites + 2 * nsitesreduce
+    allsites = siteinds("Qubit", nallsites)
+    psi = normalize(randomMPS(ComplexF64, allsites, linkdims=bonddim))
+    fullrho = density_matrix(psi)
+
+    # Reduce outside sites, keeping only nsites
+    siterange = centerrange(nallsites, nsites)
+    rho = reduced_density_matrix(fullrho, collect(siterange))
+    sites = allsites[siterange]
+
+    # Take range of sites in the middle of rho onto which to apply the Kraus operators
+    krausrange = centerrange(nsites, nkraussites)
+    kraussites = sites[krausrange]
+    rhoslice = MPO(rho[krausrange]) # the first and last tensors have loose links
+
+    # Make truncated density matrix
+    truncrange = centerrange(nkraussites, nbondstrunc + 1)
+    # save initial dimensions of truncated links
+    linkstotrunc = linkind.(Ref(rhoslice), truncrange[1:end-1])
+    initdimstrunc = NDTensors.dim.(linkstotrunc)
+    # truncate() orthogonalizes the MPO, but that is ok because we completely contract the
+    # MPOs before running optimization
+    trunc = truncate(rhoslice; maxdim=truncatedbonddim, site_range=truncrange)
+
+    # Find approximate quantum channel
+    K, optloss, initloss = approxqcmpo(rhoslice, trunc; nkraus)
 
     return TruncResults(;
-        reducedrho,
-        truncrho,
+        rho=rhoslice,
+        truncrho=trunc,
         K,
-        krausidx,
         kraussites,
-        lossratio,
+        initloss,
+        optloss,
         initdimstrunc
     )
 end
@@ -108,20 +187,21 @@ end
 
 # Compute truncation channels
 channelparams = TruncParams(;
-    nsites=6,
+    nsites=2,
+    nsitesreduce=0,
     bonddim=100,
     nkraussites=2,
     nbondstrunc=1,
     truncatedbonddim=1,
     nkraus=4
 )
-ntruncsamples = 20
+ntruncsamples = 10
 results = [runtruncationapprox(channelparams) for _ in 1:ntruncsamples]
-results = vcat(results, loadedresults) # uncomment to save previous results
+# results = vcat(results, loadedresults) # uncomment to save previous results
 
 # save results
 datadir = "outputs"
-datafilename = "rand-mpo-data.jld2"
+datafilename = "rand-mpo-data-2-3.jld2"
 savefile = joinpath(@__DIR__, "..", datadir, datafilename)
 tosave = Dict("results" => results)
 save(savefile, tosave)
@@ -131,14 +211,16 @@ savedata = load(savefile)
 loadedresults = savedata["results"]
 
 # Loss ratios
-lossratios = [r.lossratio for r in loadedresults]
+lossratios = [round(r.optloss, digits=5) / r.initloss for r in loadedresults]
+bins = 0:0.01:1.0
 histogram(
     lossratios,
     title="Loss ratios",
     normalize=:pdf,
     xlabel="Loss ratio",
-    ylabel="count",
-    legend=false
+    ylabel="%",
+    legend=false;
+    bins
 )
 savefig(joinpath(@__DIR__, "..", datadir, "loss"))
 
@@ -158,19 +240,19 @@ meanplots = []
 pdarr = cat(pdecomps..., dims=4)
 pdnorms = norm.(pdarr)
 pdmean = mean(pdnorms, dims=4)
-push!(meanplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means", clims=:auto))
-push!(meanplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means (zeroed)"))
+push!(meanplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means"))
+push!(meanplots, plot_paulidecomp(pdmean, title="Pauli decomposition norm means (zeroed)", zerolims=true))
 pdstd = std(pdnorms, dims=4)
-push!(meanplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std", clims=:auto))
-push!(meanplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std (zeroed)"))
+push!(meanplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std"))
+push!(meanplots, plot_paulidecomp(pdstd, title="Pauli decomposition norm std (zeroed)", zerolims=true))
 pdstdratio = pdstd ./ pdmean
-push!(meanplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio", clims=:auto))
-push!(meanplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio (zeroed)"))
+push!(meanplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio"))
+push!(meanplots, plot_paulidecomp(pdstdratio, title="Pauli decomposition norm std to mean ratio (zeroed)", zerolims=true))
 
 plot(
     meanplots...,
     layout=(length(meanplots), 1),
-    size=(1450, length(meanplots) * 300)
+    size=(1400, 1.36 * length(meanplots) * 215)
 )
 savefig(joinpath(@__DIR__, "..", datadir, "means"))
 
@@ -183,7 +265,7 @@ sampleinds = [mininds..., reverse(maxinds)...]
 sampleplots = [
     plot_paulidecomp(
         norm.(pdecomps[i]),
-        title="Sample $i: loss = $(round(lossratios[i], digits=3))",
+        title="Sample $i: loss = $(round(lossratios[i], digits=4))",
         plotnorms=true
     )
     for i in sampleinds
@@ -191,6 +273,6 @@ sampleplots = [
 plot(
     sampleplots...,
     layout=(length(sampleplots), 1),
-    size=(1700, length(sampleplots) * 300)
+    size=(2000, 1.6 * length(sampleplots) * 215)
 )
 savefig(joinpath(@__DIR__, "..", datadir, "samples"))

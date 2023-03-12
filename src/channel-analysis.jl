@@ -96,7 +96,7 @@ function plot_paulidecomp(pdnorms; zerolims=false, title="Pauli Decomposition", 
     width = 250 * nx * 1.35
 
     for n in 1:nkraus
-        data = pdnorms[:, :, n]
+        data = round.(pdnorms[:, :, n], digits=5)
         maxval = maximum(data)
         minval = minimum(data)
         computedclims = zerolims ? (0, maxval) : (minval, maxval)
@@ -108,7 +108,7 @@ function plot_paulidecomp(pdnorms; zerolims=false, title="Pauli Decomposition", 
             title=n,
             framestyle=:none,
         )
-        ann = [(j, i, text("$n" * labels[i, j], :white, :center, 8)) for i in 1:ndimens for j in 1:ndimens]
+        ann = [(j, i, text(labels[i, j], :white, :center, 8)) for i in 1:ndimens for j in 1:ndimens]
         p = annotate!(p, ann, linecolor=:white, yflip=true)
         push!(ps, p)
     end
