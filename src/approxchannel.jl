@@ -84,10 +84,13 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing, sile
     # valid complex-valued Kraus operators.
     # TODO: explore effect of initialization on optimizations
     σy = [0.0 -1.0; 1.0 0.0]
-    initK = 1 / sqrt(2) * (I + (1.0im * (σy ⊗ nqubits)))
+    # initKs = cat(repeat(sqrt(1 / nkraus) * 1 / sqrt(2) * (I + (1.0im * (σy ⊗ nqubits))), outer=[1, 1, nkraus]), dims=3)
+    ident = Array(I, ndim, ndim)
+    zero = zeros(ndim, ndim)
+    initKs = cat(ident, repeat(zero, outer=[1, 1, nkraus - 1]), dims=3)
     Ks = reshape([
-            @variable(model, set = ComplexPlane(), start = sqrt(1 / nkraus) * initK[i, j])
-            for (i, j, _) in Tuple.(CartesianIndices(Ksdims))
+            @variable(model, set = ComplexPlane(), start = initKs[i, j, k])   #sqrt(1 / nkraus) * initK[i, j])
+            for (i, j, k) in Tuple.(CartesianIndices(Ksdims))
         ], Ksdims)
 
     # Define Krauss operators contraint: ∑ᵢKᵢ†Kᵢ = I
