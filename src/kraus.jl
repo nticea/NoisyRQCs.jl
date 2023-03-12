@@ -11,6 +11,21 @@ function getkrausind(K)
 end
 
 """
+Returns true is K is a valid Kraus tensor. Checks completeness.
+"""
+function isvalidkraus(K::ITensor, sites)
+    # Put Kraus tensor into canonical form
+    # K = getcanonicalkraus(K)
+    krausidx = getkrausind(K)
+
+    # Check completeness with tensors
+    Kdag = swapprime(dag(K), 0 => 1) * δ(krausidx, krausidx')
+    complete = apply(Kdag, K)
+    delt = *([δ(ind, ind') for ind in sites]...)
+    return complete ≈ delt
+end
+
+"""
 Transform Kraus operator tensor to canonical form with SVD. The quantum channel defined
 by the set of Kraus operators K_i is invariant under unitary transformation on the virtual
 index. This allows us to SVD the Kraus tensor on the virtual index and drop the U tensor.
