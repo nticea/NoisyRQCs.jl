@@ -1,66 +1,180 @@
-# using ITensors
+
+using ITensors
 using LinearAlgebra
 using TSVD
 using JuMP
 using Ipopt
 using Kronecker: ⊗
-import Base
+using Parameters
 
-"""
-Convert MPO into matrix
-"""
-function Base.Matrix(A::MPO)
-    # combine primed and unprimed site indices to make matrix
-    sinds = hcat(siteinds(A)...)
-    unprimed = sinds[1, :]
-    primed = sinds[2, :]
-    Cunprimed = combiner(unprimed...)
-    Cprimed = combiner(primed...)
-    Atensor = Cunprimed * *(A...) * Cprimed
+include("../src/utilities.jl")
+include("../src/kraus.jl")
 
-    # convert 2D tensor into matrix
-    return matrix(Atensor)
+function centerrange(n, size)
+    first = (n - size) ÷ 2 + 1
+    last = first + size - 1
+    return first:last
 end
 
 """
-Convert ITensor into matrix
+Convert MPO to array with lists of indices converted into dimensions. Inverse of
+toITensor()
 """
-function toMatrix(A::ITensor, inds1, inds2)
-    # get combiners from grouped indices
-    C1 = combiner(inds1...)
-    C2 = combiner(inds2...)
-    Atensor = C1 * A * C2
-
-    # convert 2D tensor into matrix
-    return matrix(Atensor)
+function toarray(M::MPO, indlists...)::Array
+    T = *(M...)
+    return toarray(T, indlists...)
 end
 
 """
-Convert Array with combined dimensions into Tensor
+Convert ITensor to array with lists of indices converted into dimensions. Inverse of
+toITensor()
 """
-function toITensor(A, inds1, inds2, otherinds...)
-    # get combiners from grouped indices
-    C1 = combiner(inds1...)
-    C2 = combiner(inds2...)
-
-    # Convert matrix to ITensor
-    ind1 = combinedind(C1)
-    ind2 = combinedind(C2)
-    t = ITensor(A, ind1, ind2, otherinds...)
-
-    # Uncombine indices
-    return t * C1 * C2
+function toarray(T::ITensor, indlists...)::Array
+    combiners = combiner.(filter(!isnothing, indlists))
+    flattened = *(T, combiners...)
+    combinds = combinedind.(combiners)
+    return array(flattened, combinds)
 end
 
 """
-Transform Kraus operator tensor to canonical form with SVD. The quantum channel defined
-by the set of Kraus operators K_i is invariant under unitary transformation on the virtual
-index. This allows us to SVD the Kraus tensor on the virtual index and drop the U tensor.
+Convert array to ITensor with dimensions mapped to lists of indices. Inverse of toarray()
 """
-function getcanonicalkraus(Ks, virtualidx)
-    U, S, V = svd(Ks, virtualidx)
-    sindex = uniqueind(S, V)
-    return δ(virtualidx, sindex) * S * V
+function toITensor(A, indlists...)::ITensor
+    combiners = combiner.(filter(!isnothing, indlists))
+    combinedinds = combinedind.(combiners)
+    T = ITensor(A, combinedinds...)
+    return *(T, combiners...)
+end
+
+"""
+leftlinkind(M::MPS, j::Integer)
+leftlinkind(M::MPO, j::Integer)
+Get the link or bond Index connecting the MPS or MPO tensor on site j-1 to site j.
+If there is no link Index, return `nothing`.
+"""
+function leftlinkind(M::ITensors.AbstractMPS, j::Integer)
+    (j > length(M) || j < 2) && return nothing
+    return commonind(M[j-1], M[j])
+end
+
+"""
+Alias for linkind(M::MPS, j::Integer)
+"""
+const rightlinkind = linkind
+
+"""
+Finds links one either end of a MPS or MPO slice that are loose
+      |     |
+=> - [_] - [_] - <=
+      |     |
+"""
+function getlooselinks(M::ITensors.AbstractMPS)
+    leftlinks = taginds(M[1], "Link")
+    @assert length(leftlinks) ≤ 2
+    looseleft = getfirst(!=(rightlinkind(M, 1)), leftlinks)
+
+    rightlinks = taginds(M[end], "Link")
+    @assert length(rightlinks) ≤ 2
+    looseright = getfirst(!=(leftlinkind(M, length(M))), rightlinks)
+
+    return looseleft, looseright
+end
+
+"""
+Combine loose links from the ends of a range of an MPS or MPO and contract into a
+tensor.
+   |     |          | |
+- [_] - [_] -  =>  [___]-
+   |     |          | |
+"""
+function combineoutsidelinks(M::ITensors.AbstractMPS)
+    # left and right links may be `nothing`
+    leftlink, rightlink = getlooselinks(M)
+    linkcombiner = combiner(filter(!isnothing, [leftlink, rightlink])...)
+    rhocomb = *(M..., linkcombiner)
+    return rhocomb, linkcombiner
+end
+
+"""
+Approximate a final MPO with a quantum channel applied to a initial MPO.
+"""
+function approxquantumchannel(init::MPO, final::MPO; nkraus::Union{Nothing,Int}=nothing, silent=false)
+    sites = firstsiteinds(init)
+
+    rhocomb, rholinkcomb = combineoutsidelinks(init)
+    trunccomb, trunclinkcomb = combineoutsidelinks(final)
+
+    ρ = toarray(rhocomb, sites, sites', combinedind(rholinkcomb))
+    ρ̃ = toarray(trunccomb, sites, sites', combinedind(trunclinkcomb))
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃; nkraus, silent=true)
+
+    # Transform Kraus operator into tensor
+    krausidx = Index(last(size(Ks)), KRAUS_TAG)
+    K = toITensor(Ks, sites', sites, krausidx)
+
+    return K, optloss, initloss
+end
+
+@with_kw struct TruncParams
+    nsites::Int
+    bonddim::Int
+    nkraussites::Int
+    nsitesreduce::Int = 0
+    nbondstrunc::Int
+    truncatedbonddim::Int
+    nkraus::Int
+end
+
+@with_kw struct TruncResults
+    rho::MPO
+    truncrho::MPO
+    K::ITensor
+    kraussites::Vector{Index}
+    initloss::Float64
+    optloss::Float64
+    initdimstrunc::Vector{Int}
+end
+
+function runtruncationapprox(params::TruncParams)::TruncResults
+    @unpack nsites, bonddim, nkraussites, nsitesreduce, nbondstrunc, truncatedbonddim, nkraus = params
+
+    # Generate random density
+    nallsites = nsites + 2 * nsitesreduce
+    allsites = siteinds("Qubit", nallsites)
+    psi = normalize(randomMPS(ComplexF64, allsites, linkdims=bonddim))
+    fullrho = density_matrix(psi)
+
+    # Reduce outside sites, keeping only nsites
+    siterange = centerrange(nallsites, nsites)
+    rho = reduced_density_matrix(fullrho, collect(siterange))
+    sites = allsites[siterange]
+
+    # Take range of sites in the middle of rho onto which to apply the Kraus operators
+    krausrange = centerrange(nsites, nkraussites)
+    kraussites = sites[krausrange]
+    rhoslice = MPO(rho[krausrange]) # the first and last tensors have loose links
+
+    # Make truncated density matrix
+    truncrange = centerrange(nkraussites, nbondstrunc + 1)
+    # save initial dimensions of truncated links
+    linkstotrunc = linkind.(Ref(rhoslice), truncrange[1:end-1])
+    initdimstrunc = NDTensors.dim.(linkstotrunc)
+    # truncate() orthogonalizes the MPO, but that is ok because we completely contract the
+    # MPOs before running optimization
+    trunc = truncate(rhoslice; maxdim=truncatedbonddim, site_range=truncrange)
+
+    # Find approximate quantum channel
+    K, optloss, initloss = approxqcmpo(rhoslice, trunc; nkraus)
+
+    return TruncResults(;
+        rho=rhoslice,
+        truncrho=trunc,
+        K,
+        kraussites,
+        initloss,
+        optloss,
+        initdimstrunc
+    )
 end
 
 """
@@ -71,7 +185,7 @@ operators.
 min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
 s.t.    ∑ᵢKᵢ†Kᵢ = I
 """
-function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
+function approxquantumchannel(ρ::Array, ρ̃::Array; nkraus::Union{Nothing,Int}=nothing, silent=false)
     @assert size(ρ̃) == size(ρ) "Dimensions of ρ and ρ̃ must match"
     ndim = first(size(ρ))
     @assert ispow2(ndim) "Dimension of density matrix must be a power of 2"
@@ -85,6 +199,7 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
 
     # Build Krauss operator variables
     model = Model(Ipopt.Optimizer)
+    silent ? set_silent(model) : nothing
     # complex array variables are not currently supported, so have to reshape
     nqubits = floor(Int64, log(2, ndim))
     maxnkraus = (2^nqubits)^2
@@ -94,26 +209,17 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
     # valid complex-valued Kraus operators.
     # TODO: explore effect of initialization on optimizations
     σy = [0.0 -1.0; 1.0 0.0]
-    initK = 1 / sqrt(2) * (I + (1.0im * (σy ⊗ nqubits)))
+    # initKs = cat(repeat(sqrt(1 / nkraus) * 1 / sqrt(2) * (I + (1.0im * (σy ⊗ nqubits))), outer=[1, 1, nkraus]), dims=3)
+    ident = Array(I, ndim, ndim)
+    zero = zeros(ndim, ndim)
+    initKs = cat(ident, repeat(zero, outer=[1, 1, nkraus - 1]), dims=3)
     Ks = reshape([
-            @variable(model, set = ComplexPlane(), start = sqrt(1 / nkraus) * initK[i, j])
-            for (i, j, _) in Tuple.(CartesianIndices(Ksdims))
+            @variable(model, set = ComplexPlane(), start = initKs[i, j, k])   #sqrt(1 / nkraus) * initK[i, j])
+            for (i, j, k) in Tuple.(CartesianIndices(Ksdims))
         ], Ksdims)
 
     # Define Krauss operators contraint: ∑ᵢKᵢ†Kᵢ = I
     @constraint(model, sum(K' * K for K in eachslice(Ks, dims=3)) .== I)
-
-    # # Ensure that the Kraus operators are Hermitian
-    # for i in 1:nkraus
-    #     K = Ks[:, :, i]
-    #     for x in 1:ndim
-    #         for y in 1:ndim
-    #             if x < y
-    #                 @constraint(model, K[x, y] == K'[x, y])
-    #             end
-    #         end
-    #     end
-    # end
 
     # Find the difference between the approximation and tsvd matrix and compute the
     # Frobenius norm: ∑ᵢKᵢρKᵢ† - ρ̃.
@@ -145,13 +251,5 @@ function approxquantumchannel(ρ, ρ̃; nkraus::Union{Nothing,Int}=nothing)
 
     optloss = objective_value(model)
 
-    @show initloss
-    @show optloss
-
     return value.(Ks), optloss, initloss, iterdata, model
 end
-
-
-
-
-# TODO: functions to: reshape matrix to tensor

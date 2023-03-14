@@ -1,6 +1,7 @@
 
 using ITensors
 using LinearAlgebra
+using Plots
 using Kronecker: ⊗
 
 """
@@ -10,12 +11,31 @@ function frobneiusnorm(K, onindices...)
     allinds = collect(inds(K))
     indstonorm = allinds[allinds.∉Ref(onindices)]
 
-    # For some reason it's not happy two broadcasts at the same time :(
-    normed = norm.(K)
-    normsquared = normed .^ 2
-    summed = normsquared * ITensor(1.0, indstonorm)
+    # note: real() is used only to convert tensor type. norm() should already be real
+    return sqrt.((real(norm.(K)) .^ 2) * ITensor(1.0, indstonorm))
+end
 
-    return sqrt.(summed)
+function buildpaulibasis(site)
+    Id = Matrix(I, 2, 2)
+    σx = [0.0 1.0
+        1.0 0.0]
+    σy = [0.0 -1.0im
+        1.0im 0.0]
+    σz = [1.0 0.0
+        0.0 -1.0]
+
+    paulis = [Id, σx, σy, σz]
+
+    return [ITensor(pauli, site, site') for pauli in paulis]
+end
+
+function paulibasislabels(n::Int)
+    sitelabels = [
+        [l for l in ["I", "x", "y", "z"]]
+        for _ in 1:n
+    ]
+
+    return [*(ops...) for ops in Iterators.product(sitelabels...)]
 end
 
 """
@@ -23,150 +43,123 @@ Computes matrix of pauli decomposition coefficients of tensor on given indices a
 C_i = 1/n^2 Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
 """
 function paulidecomp(K, sites)
-    psites = prime.(sites) # we will work with the convention that MPO has primed inds on one side and unprimed on the other
-
-    # Pauli operators
-    Id = Matrix(I, 2, 2)
-    σx = [0.0 1.0
-        1.0 0.0]
-    σy = [0.0 -1.0im
-        -1.0im 0.0]
-    σz = [1.0 0.0
-        0.0 -1.0]
-    paulis = [Id, σx, σy, σz]
-
     # Build pauli itensors for each site
-    sitebases = [
-        [ITensor(pauli, sites[i], psites[i]) for pauli in paulis]
-        for i in eachindex(sites)
-    ]
-
-    sitelabels = [
-        [l for l in ["I", "x", "y", "z"]]
-        for _ in eachindex(sites)
-    ]
+    sitebases = buildpaulibasis.(sites)
 
     # Build tensor products of all combinations of paulis across sites
     basis = [*(ops...) for ops in Iterators.product(sitebases...)]
-    basis_labels = [*(ops...) for ops in Iterators.product(sitelabels...)]
 
     # Compute pauli decomposition coefficients: C_i = 1/2^n Tr(Kᵢ ⋅ σᵃ ⊗ σᵇ)
     # where n is the number of sites.
     nsites = length(sites)
-    N = 2^nsites # defining some useful constants
-    @show inds(K)
 
-    Cs = (1 / N) .* Ref(K) .* basis
+    Cs = (1 / 2^nsites) .* Ref(K) .* basis
 
-    # for each Ki in the stack of Kraus operators, plot its projection onto the coefficients
-    kraus_dim = ITensors.dim.(inds(Cs[1, 1]))[1] # the kraus dimension
-    K_projs_real = zeros(Float64, kraus_dim, N, N)
-    K_projs_imag = zeros(Float64, kraus_dim, N, N)
-    labels = ["" for _ in 1:kraus_dim, _ in 1:N, _ in 1:N]
-    for c1 in 1:N
-        for c2 in 1:N
-            for i in 1:kraus_dim # iterate through the dimensions of the kraus operator
-                K_projs_real[i, c1, c2] = real(Cs[c1, c2][i])
-                K_projs_imag[i, c1, c2] = imag(Cs[c1, c2][i])
-                labels[i, c1, c2] = "K$(i)" * basis_labels[c1, c2]
-            end
-        end
-    end
+    # Transpose basis for reconstruction
+    recbasis = swapprime.(basis, Ref(1 => 0))
 
-    return K_projs_real, K_projs_imag, labels
+    labels = paulibasislabels(length(sites))
+
+    return Cs, recbasis, labels
 end
 
-function dephasing_noise(sites, ε::Float64)
-    CS = combiner(sites...) # make a combiner tensor for the inds
-    cS = combinedind(CS) # make a new label for the combined indices
-
-    # Make the kraus operators
-    Id = Matrix(I, 2, 2)
-    σx = [0.0 1.0
-        1.0 0.0]
-    σy = [0.0 -1.0im
-        -1.0im 0.0]
-    σz = [1.0 0.0
-        0.0 -1.0]
-
-    Ids = sqrt(1 - ε) .* copy(Id)
-    σxs = sqrt(ε / 3) .* copy(σx)
-    σys = sqrt(ε / 3) .* copy(σy)
-    σzs = sqrt(ε / 3) .* copy(σz)
-
-    for _ in 2:length(sites)
-        # Build up the total operator
-        Ids = Ids ⊗ Id
-        σxs = σxs ⊗ σx
-        σys = σys ⊗ σy
-        σzs = σzs ⊗ σz
-    end
-
-    # Stack them together
-    K_elems = cat(collect(Ids), collect(σxs), collect(σys), collect(σzs), dims=3)
-
-    # Turn this into an ITensor with the appropriate indices
-    sum_idx = Index(4, tags="Kraus")
-    KC = ITensor(K_elems, cS, prime(cS), sum_idx)
-    K = KC * CS * prime(CS)
-    return K
+"""
+Reshape a 2D matrix of 1D tensors to a 3D array
+"""
+function tensmatrix_to_arr(Ts::Matrix{ITensor})
+    coeffsraw = array.(Ts) # Matrix{Vector}
+    n3d = size(coeffsraw[1, 1])[1]
+    return cat([getindex.(coeffsraw, Ref(i)) for i in 1:n3d]..., dims=3)
 end
 
-function random_noise(sites, nkraus::Int)
-    CS = combiner(sites...) # make a combiner tensor for the inds
-    cS = combinedind(CS) # make a new label for the combined indices
-
-    # Make the kraus operators
-    ms = [rand(Complex{Float64}, 2, 2) for _ in 1:nkraus]
-
-    for _ in 2:length(sites)
-        # Build up the total operator
-        for i in 1:length(ms)
-            ms[i] = ms[i] ⊗ rand(Complex{Float64}, 2, 2)
-        end
-    end
-
-    # Stack them together
-    K_elems = cat([collect(m) for m in ms]..., dims=3)
-
-    # Turn this into an ITensor with the appropriate indices
-    sum_idx = Index(nkraus, tags="Kraus")
-    KC = ITensor(K_elems, cS, prime(cS), sum_idx)
-    K = KC * CS * prime(CS)
-    return K
+"""
+Visualize Pauli decomposition of tensor on sites
+"""
+function visualize_kraus(K, sites; title::String="Pauli Decomposition", clims=nothing)
+    pdecomp, basis, labels = paulidecomp(K, sites)
+    pdnorms = norm.(pdecomp)
+    plot_paulidecomp(pdecomp; clims)
 end
 
-function visualize_paulidecom(K, sites; title::String="Pauli Decomposition", clims::Tuple{Real,Real}=(-1, 1))
-    Kreal, Kimag, labels = paulidecomp(K, sites)
-    numkraus = size(Kreal)[1]
-    ndims = size(Kreal)[2]
+function plot_paulidecomp(pdnorms; zerolims=false, title="Pauli Decomposition", plotnorms=false)
+    nkraus = size(pdnorms)[3]
+    ndimens = size(pdnorms)[1]
+    nsites = Int(log(2, ndimens))
+    labels = paulibasislabels(nsites)
+
     ps = []
-    for n in 1:numkraus
-        p = heatmap(Kreal[n, :, :] .^ 2 + Kimag[n, :, :] .^ 2, aspect_ratio=:equal, clim=clims, c=:bluesreds, yflip=true)
-        ann = [(j, i, text(labels[n, i, j], :white, :center)) for i in 1:ndims for j in 1:ndims]
-        p = annotate!(p, ann, linecolor=:white, yflip=:true)
+
+    nx = 4
+    ny = ceil(Int, nkraus / nx)
+
+    height = 250 * ny
+    width = 250 * nx * 1.35
+
+    for n in 1:nkraus
+        data = round.(pdnorms[:, :, n], digits=5)
+        maxval = maximum(data)
+        minval = minimum(data)
+        computedclims = zerolims ? (0, maxval) : (minval, maxval)
+        Plots.gr_cbar_width[] = 0.005
+        p = heatmap(
+            data,
+            c=:blues,
+            clims=computedclims,
+            title=n,
+            framestyle=:none,
+        )
+        ann = [(j, i, text(labels[i, j], :white, :center, 8)) for i in 1:ndimens for j in 1:ndimens]
+        p = annotate!(p, ann, linecolor=:white, yflip=true)
         push!(ps, p)
     end
-    s = (500 * nkraus / 2, 1000)
-    p = plot(ps...,
-        layout=Plots.grid(2, floor(Int, nkraus / 2), widths=[1 / floor(Int, nkraus / 2) for _ in 1:floor(Int, nkraus / 2)]), size=s, plot_title=title)
 
-    return p
+    l = @layout [
+        title{0.001h}
+        grid(ny, nx)
+    ]
+
+    # show a barplot of matrix norms
+    if plotnorms
+        relnorms = [sqrt(sum(norm.(m) .^ 2)) for m in eachslice(pdnorms, dims=3)]
+        normplot = bar(
+            relnorms,
+            titlefont=font(9),
+            legend=:none
+        )
+        ps = vcat(normplot, ps)
+        l = @layout [
+            title{0.001h}
+            n{0.11w} grid(ny, nx)
+        ]
+        width = width + 300
+    end
+
+    return plot(
+        plot(title=title, grid=false, showaxis=false, ticks=false),
+        ps...,
+        size=(width, height),
+        layout=l,
+        topmargin=4 * Plots.mm
+    )
 end
 
-# function plotkrausdecomp(K, sites, n, title)
-#     # Calculte pauli decomposition coefficients
-#     coefs, basis, labels = paulidecomp(K, sites)
+"""
+Run basic analysis on Kraus tensor
+    - Pauli decomposition
+    - Distribution of norms
+"""
+function analyzekraus(K, sites; usecanonical=true)
+    # Transform into canonical form
+    K = usecanonical ? getcanonicalkraus(K) : K
 
-#     # Transform coefficient tensors into 3D array
-#     projarr = cat([getindex.(array.(coefs), Ref(i)) for i in 1:n]..., dims=3)
-#     projnorms = norm.(projarr)
+    # perform pauli decomposition
+    pdtens, basis, labels = paulidecomp(K, sites)
+    pdarr = tensmatrix_to_arr(pdtens)
 
-#     # Plot
-#     ps = [heatmap(projnorms[:, :, i], aspect_ratio=:equal, c=:bluesreds, yflip=true, title=(title * " $i")) for i in 1:n]
-#     return plot(
-#         ps...,
-#         layout=Plots.grid(ceil(Int, n / 2), 2),
-#         size=(500 * (n ÷ 2), 1000)
-#     )
-# end
+    # Get norm distribution
+    normtensor = frobneiusnorm(K, getkrausind(K))
+    norms = array(normtensor)
+    relnorms = norms / sum(norms)
+
+    return pdarr, relnorms
+end

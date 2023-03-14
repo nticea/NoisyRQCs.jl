@@ -1,6 +1,7 @@
 include("circuit.jl")
 include("utilities.jl")
 include("approxchannel.jl")
+include("kraus.jl")
 
 using ITensors
 using LinearAlgebra
@@ -119,10 +120,10 @@ function truncation_quantum_channel(ρ::MPO, truncdim::Int, truncidx::Int, nkrau
     loss_hist = map(x -> x[3], iterdata)
 
     # Turn the Ks into ITensors
-    virtualidx = Index(size(Ksarr)[3], tags="Kraus")
+    virtualidx = Index(size(Ksarr)[3], tags=KRAUS_TAG)
     Ksraw = ITensor(Ksarr, iX, iX1, virtualidx)
     Ksraw = Ksraw * cX * cX1
-    Ks = getcanonicalkraus(Ksraw, virtualidx)
+    Ks = getcanonicalkraus(Ksraw)
 
     return Ks, optloss, initloss, loss_hist
 end
@@ -173,10 +174,10 @@ function truncation_quantum_channel_rdm(ρ::MPO, truncdim::Int, truncidx::Int, n
     loss_hist = map(x -> x[3], iterdata)
 
     # Turn the Ks into ITensors
-    virtualidx = Index(size(Ksarr)[3], tags="Kraus")
+    virtualidx = Index(size(Ksarr)[3], tags=KRAUS_TAG)
     Ksraw = ITensor(Ksarr, iX, iX1, virtualidx)
     Ksraw = Ksraw * cX * cX1
-    Ks = getcanonicalkraus(Ksraw, virtualidx)
+    Ks = getcanonicalkraus(Ksraw)
 
     return Ks, optloss, initloss, loss_hist
 end

@@ -4,6 +4,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 include("../src/lagrange.jl")
 include("../src/utilities.jl")
 include("../src/channel-analysis.jl")
+include("../src/kraus.jl")
 
 using Plots
 using Images, ImageTransformations
@@ -39,14 +40,14 @@ plot(p)
 
 ## FOR REFERENCE -- construct various types of noise ##
 Kdephasing = dephasing_noise(sites, 0.5)
-p_dephasing = visualize_paulidecom(Kdephasing, sites, title="Pauli decomposition for dephasing noise")
+p_dephasing = visualize_paulidecomp(Kdephasing, sites, title="Pauli decomposition for dephasing noise")
 plot(p_dephasing)
 
 ## Random noise
 Krandom = random_noise(sites, 4)
-p_random = visualize_paulidecom(Krandom, sites, title="Pauli decomposition for random noise")
+p_random = visualize_paulidecomp(Krandom, sites, title="Pauli decomposition for random noise")
 plot(p_random)
 
-K = all_Ks[10]
-p_K = visualize_paulidecom(K, sites, title="Pauli decomposition for truncation channel", clims=(-0.1, 0.1))
+K = all_Ks[3]
+p_K = visualize_paulidecomp(K, sites, title="Pauli decomposition for truncation channel", clims=(-0.1, 0.1))
 plot(p_K)
