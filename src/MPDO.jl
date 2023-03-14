@@ -199,7 +199,6 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             @show SvN
 
             # Compute ρ_A, ρ_B, and ρ_AB for two sites A and B 
-            # 4 is arbitrary, but going higher is challenging computationally 
             A = 1
             for B in collect(2:L)
                 ρAB = twosite_reduced_density_matrix(ρ, A, B)
@@ -233,7 +232,7 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
     end
 
     if benchmark
-        return ψ, state_entanglement, operator_entanglement, trace
+        return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
     end
 
     return ψ

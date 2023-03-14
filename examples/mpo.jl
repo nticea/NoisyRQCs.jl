@@ -1,7 +1,7 @@
 ## IMPORTS ##
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
-include("../src/MPDO.jl")
+include("../src/circuit.jl")
 include("../src/results.jl")
 
 ITensors.set_warn_order(50)
@@ -10,9 +10,7 @@ ITensors.set_warn_order(50)
 L = 9
 T = 100
 εs = [0]
-maxdim = 16
-max_inner_dims = [16]
-normalize_ρ = true
+maxdims = [256]
 
 # Initialize the wavefunction to product state (all 0)
 ψ0 = initialize_wavefunction(L=L)
@@ -28,11 +26,10 @@ for ε in εs
     ts = []
     lns = []
     MIs = []
-    for max_inner_dim in max_inner_dims
-        @show ε, max_inner_dim
+    for maxdim in maxdims
+        @show ε, maxdim
         # Apply the MPDO circuit
-        ψ, state_entanglement, operator_entanglement, logneg, MI, trace = apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim,
-            max_inner_dim=max_inner_dim, benchmark=true, normalize_ρ=normalize_ρ)
+        ρ, state_entanglement, operator_entanglement, logneg, MI, trace = apply_circuit(ψ0, T; random_type="Haar", ε=ε, benchmark=true, maxdim=maxdim)
         push!(stents, state_entanglement)
         push!(opents, operator_entanglement)
         push!(ts, trace)
@@ -56,10 +53,10 @@ global p3 = plot()
 innerdim_ls = [:solid, :dash, :dot]
 
 for (i, ε) in enumerate(εs)
-    for (j, max_inner_dim) in enumerate(max_inner_dims)
+    for (j, maxdim) in enumerate(maxdims)
         # state entropy
         toplot = st_ents[i][j]
-        global p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), maxdim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Second Rényi Entropy of State at L/2", legend=:bottomright)
 
         # operator entropy 
@@ -69,21 +66,21 @@ for (i, ε) in enumerate(εs)
             S = transpose(S)
         end
         toplot = S[mid, :]
-        global p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), maxdim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Operator Entanglement Entropy at L/2", legend=:bottomright)
 
         # trace 
         toplot = traces[i][j]
-        global p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), maxdim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Trace", legend=:bottomright)
 
         # logarthmic negativity 
-        toplot = lognegs[i][j][:, 2:end]
-        global p4 = heatmap(toplot)
+        toplot = lognegs[i][j][1:30, 2:end]
+        global p4 = heatmap(toplot, xlabel="Distance (sites)", ylabel="Time", title="Logarithmic Negativity")
 
-        # logarthmic negativity 
-        toplot = mutual_infos[i][j][1:20, 2:end]
-        global p4 = heatmap(toplot)
+        # mutual information
+        toplot = mutual_infos[i][j][1:30, 1:end]
+        global p4 = heatmap(toplot, xlabel="Distance (sites)", ylabel="Time", title="Mutual Information")
 
     end
 end
