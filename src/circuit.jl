@@ -1,7 +1,7 @@
 using ITensors
 using Distributions
 using LinearAlgebra
-using StatsBase 
+using StatsBase
 include("utilities.jl")
 include("circuit_elements.jl")
 
@@ -32,13 +32,15 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=
 
     if benchmark
         state_entanglement = zeros(Float64, T)
-        operator_entanglement = zeros(Float64, T, L-3)
+        operator_entanglement = zeros(Float64, T, L - 3)
         trace = zeros(Float64, T)
+        lognegs = zeros(Float64, T, L)
+        MIs = zeros(Float64, T, L)
     end
-    
+
     # Iterate over all time steps 
     for t in 1:T
-        print(t,"-")
+        print(t, "-")
 
         # benchmarking 
         if benchmark
@@ -46,7 +48,7 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=
             @show maxlinkdim(ρ)
 
             # Calculate the second Renyi entropy (state entanglement)
-            ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L/2)))
+            ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L / 2)))
             SR2 = second_Renyi_entropy(ρ_A)
             state_entanglement[t] = real(SR2)
 
@@ -56,11 +58,33 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=
             for b in 2:(L-2)
                 push!(SvN, entanglement_entropy(Ψ, b=b))
             end
-            operator_entanglement[t,:] = SvN
-            
+            operator_entanglement[t, :] = SvN
+
             # trace
             trace[t] = real.(tr(ρ))
             @show trace[t]
+
+            # logarithmic negativity and mutual information 
+            A = 1
+            for B in collect(2:L)
+                ρAB = twosite_reduced_density_matrix(ρ, A, B)
+                ρA = reduced_density_matrix(ρ, [A])
+                ρB = reduced_density_matrix(ρ, [B])
+
+                @show inds(ρAB)
+                @show inds(ρA)
+                @show inds(ρB)
+                @assert 1 == 0
+
+                # Compute the logarithmic negativity
+                lognegs[t, B] = logarithmic_negativity(ρAB, [1])
+
+                # Compute the mutual information 
+                MIs[t, B] = mutual_information(ρA, ρB, ρAB)
+
+            end
+            @show lognegs[t, :]
+            @show MIs[t, :]
         end
 
         # At each time point, make a layer of random unitary gates 
@@ -83,7 +107,7 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05, benchmark=
     @show tr(ρ)
 
     if benchmark
-        return ρ, state_entanglement, operator_entanglement, trace 
+        return ρ, state_entanglement, operator_entanglement, lognegs, MIs, trace
     end
 
     return ρ
