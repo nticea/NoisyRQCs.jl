@@ -61,7 +61,8 @@ function twosite_reduced_density_matrix(ρ::MPO, A::Int, B::Int)
 
     # Now trace out the indices between A and B 
     if B - A > 1
-        ρAB = partial_trace(ρAB, collect(A+1:B-1), "left")
+        ## BUG HERE!! ##
+        ρAB = partial_trace(ρAB, collect(1:(length(ρAB)-1)), "left")
     end
 
     return ρAB

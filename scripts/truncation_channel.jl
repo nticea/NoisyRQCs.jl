@@ -11,7 +11,7 @@ using Images, ImageTransformations
 using Random
 
 ITensors.set_warn_order(50)
-Random.seed!(1234)
+Random.seed!(12345)
 
 ## PARAMETERS ##
 L = 9

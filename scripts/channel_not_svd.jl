@@ -7,10 +7,10 @@ include("../src/results.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-L = 9
+L = 5
 T = 100
 εs = [0]
-maxdims = [nothing]
+maxdims = [15]
 
 # Initialize the wavefunction to product state (all 0)
 ψ0 = initialize_wavefunction(L=L)
@@ -29,7 +29,7 @@ for ε in εs
     for maxdim in maxdims
         @show ε, maxdim
         # Apply the MPDO circuit
-        ρ, state_entanglement, operator_entanglement, logneg, MI, trace = apply_circuit(ψ0, T; random_type="Haar", ε=ε, benchmark=true, maxdim=maxdim)
+        ρ, state_entanglement, operator_entanglement, logneg, MI, trace = apply_circuit(ψ0, T; random_type="Haar", ε=ε, benchmark=true, maxdim=maxdim, disentangler_channel=true)
         push!(stents, state_entanglement)
         push!(opents, operator_entanglement)
         push!(ts, trace)
@@ -86,6 +86,3 @@ for (i, ε) in enumerate(εs)
 end
 p1 = hline!(p1, [saturation_value(L)])
 plot(p1, p2, p3, layout=Plots.grid(1, 3, widths=[1 / 3, 1 / 3, 1 / 3]), size=(2000, 500))
-
-# plot_entropy(state_entanglement, L, title="MPDO Second Renyi entropy, ε=$(ε)")
-# plot_operator_entanglement(op_entanglement, L, title="MPDO operator entropy, ε=$(ε)")

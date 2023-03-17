@@ -2,8 +2,10 @@ using ITensors
 using Distributions
 using LinearAlgebra
 using StatsBase
+using Profile
 
 include("utilities.jl")
+include("approxchannel.jl")
 
 """
 This function generates a Haar random unitary of dimension DxD
@@ -150,4 +152,87 @@ function apply_onesite_gate(ρ::MPO, G::ITensor)
     ρ[c] = wf
 
     return ρ
+end
+
+function apply_twosite_gate_approximate_truncation(ρ::MPO, G::ITensor, truncdim::Int; nkraus::Int=4)
+    ρ = copy(ρ)
+    L = length(ρ)
+
+    # Extract the common indices where we will be applying the channel 
+    c = findall(x -> hascommoninds(G, ρ[x]), collect(1:length(ρ)))
+    @assert length(c) == 2
+    c1, c2 = c
+
+    # Orthogonalize the MPS around this site 
+    orthogonalize!(ρ, c1)
+
+    # Apply the gate 
+    G = G * prime(dag(G))
+    ρ_ij = (ρ[c1] * ρ[c2]) * G
+
+    # Lower the prime level by 1 to get back to what we originally had 
+    ρ_ij = replaceprime(ρ_ij, 3 => 1)
+    ρ_ij = replaceprime(ρ_ij, 2 => 0)
+
+    # SVD the resulting tensor 
+    U, S, V = ITensors.svd(ρ_ij, uniqueinds(ρ[c1], ρ[c2]), maxdim=truncdim, lefttags="Link,l=$(c1)", righttags="Link,l=$(c2)")
+
+    if c1 == 1 || c2 == L
+        ρ[c1] = U
+        ρ[c2] = S * V
+        return ρ
+
+    else
+        # Create the target tensor
+        ρ̃_ij = U * S * V
+
+        ## Tie the indices together and make sure all the indices are the same ##
+        sites = physical_indices(ρ) # qubit sites unprimed
+        sL = noprime(sites[c1]) # site on the left
+        sR = noprime(sites[c2]) # site on the right
+        # Extract the link indices
+        lL = taginds(ρ_ij, "Link,l=$(c1-1)")
+        rL = taginds(ρ_ij, "Link,l=$(c2)")
+
+        @assert length(lL) > 0 && length(rL) > 0
+        # These combiners will tie the indices together
+        cL = combiner(lL, rL)
+        cX = combiner(sL, sR)
+        cX1 = combiner(prime(sL), prime(sR))
+        iL = combinedind(cL)
+        iX = combinedind(cX)
+        iX1 = combinedind(cX1)
+        # apply the combiners
+        cρ_ij = ρ_ij * cL * cX * cX1
+        cρ̃_ij = ρ̃_ij * cL * cX * cX1
+        # permute the indices so that they match 
+        cρ_ij = permute(cρ_ij, iX, iX1, iL)
+        cρ̃_ij = permute(cρ̃_ij, iX, iX1, iL)
+
+        # find the nearest CPTP map
+        Ksarr, optloss, initloss, iterdata, model = approxquantumchannel(array(cρ_ij), array(cρ̃_ij), nkraus=nkraus)
+        @show size(Ksarr)
+        # objective value is the 3rd entry
+        loss_hist = map(x -> x[3], iterdata)
+
+        # Turn the Ks into ITensors
+        virtualidx = Index(size(Ksarr)[3], tags=KRAUS_TAG)
+        Ks = ITensor(Ksarr, iX, prime(iX, 2), virtualidx)
+        Ks = Ks * cX * prime(cX, 2)
+        Kdags = prime(dag(Ks))
+
+        # Apply the channel to the state 
+        ρ_ij_SVD = ρ_ij * Ks * delta(virtualidx, prime(virtualidx)) * Kdags
+        # Lower the prime level by 1 to get back to what we originally had 
+        ρ_ij_SVD = replaceprime(ρ_ij_SVD, 3 => 1)
+        ρ_ij_SVD = replaceprime(ρ_ij_SVD, 2 => 0)
+
+        # Perform the SVD with NO truncation
+        U, S, V = ITensors.svd(ρ_ij_SVD, uniqueinds(ρ[c1], ρ[c2]), cutoff=0, lefttags="Link,l=$(c1)", righttags="Link,l=$(c2)")
+
+        ρ[c1] = U
+        ρ[c2] = S * V
+
+        return ρ
+    end
 end
