@@ -98,7 +98,7 @@ end
 """
 Approximate a final MPO with a quantum channel applied to a initial MPO.
 """
-function approxquantumchannel(init::MPO, final::MPO; nkraus::Union{Nothing,Int}=nothing, silent=false)
+function approxquantumchannel(init::MPO, final::MPO; nkraus::Union{Nothing,Int}=nothing, silent=true)
     sites = firstsiteinds(init)
 
     rhocomb, rholinkcomb = combineoutsidelinks(init)
@@ -106,13 +106,13 @@ function approxquantumchannel(init::MPO, final::MPO; nkraus::Union{Nothing,Int}=
 
     ρ = toarray(rhocomb, sites, sites', combinedind(rholinkcomb))
     ρ̃ = toarray(trunccomb, sites, sites', combinedind(trunclinkcomb))
-    Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃; nkraus, silent=true)
+    Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃; nkraus, silent)
 
     # Transform Kraus operator into tensor
     krausidx = Index(last(size(Ks)), KRAUS_TAG)
     K = toITensor(Ks, sites', sites, krausidx)
 
-    return K, optloss, initloss
+    return K, optloss, initloss, iterdata, model
 end
 
 @with_kw struct TruncParams
@@ -185,7 +185,7 @@ operators.
 min{Kᵢ} ‖∑ᵢKᵢρKᵢ† - ρ̃‖₂
 s.t.    ∑ᵢKᵢ†Kᵢ = I
 """
-function approxquantumchannel(ρ::Array, ρ̃::Array; nkraus::Union{Nothing,Int}=nothing, silent=false)
+function approxquantumchannel(ρ::Array, ρ̃::Array; nkraus::Union{Nothing,Int}=nothing, silent=true)
     @assert size(ρ̃) == size(ρ) "Dimensions of ρ and ρ̃ must match"
     ndim = first(size(ρ))
     @assert ispow2(ndim) "Dimension of density matrix must be a power of 2"
@@ -209,10 +209,10 @@ function approxquantumchannel(ρ::Array, ρ̃::Array; nkraus::Union{Nothing,Int}
     # valid complex-valued Kraus operators.
     # TODO: explore effect of initialization on optimizations
     σy = [0.0 -1.0; 1.0 0.0]
-    # initKs = cat(repeat(sqrt(1 / nkraus) * 1 / sqrt(2) * (I + (1.0im * (σy ⊗ nqubits))), outer=[1, 1, nkraus]), dims=3)
-    ident = Array(I, ndim, ndim)
-    zero = zeros(ndim, ndim)
-    initKs = cat(ident, repeat(zero, outer=[1, 1, nkraus - 1]), dims=3)
+    initKs = cat(repeat(sqrt(1 / nkraus) * 1 / sqrt(2) * (I + (1.0im * (σy ⊗ nqubits))), outer=[1, 1, nkraus]), dims=3)
+    # ident = Array(I, ndim, ndim)
+    # zero = zeros(ndim, ndim)
+    # initKs = cat(ident, repeat(zero, outer=[1, 1, nkraus - 1]), dims=3)
     Ks = reshape([
             @variable(model, set = ComplexPlane(), start = initKs[i, j, k])   #sqrt(1 / nkraus) * initK[i, j])
             for (i, j, k) in Tuple.(CartesianIndices(Ksdims))

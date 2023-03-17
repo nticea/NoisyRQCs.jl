@@ -5,6 +5,11 @@ include("channel-analysis.jl")
 
 const KRAUS_TAG = "Kraus"
 
+function getkrausdim(K)
+    krausind = getkrausind(K)
+    return ITensors.dim(krausind)
+end
+
 function getkrausind(K)
     allinds = inds(K)
     return allinds[findfirst(ind -> hastags(ind, KRAUS_TAG), allinds)]
@@ -13,7 +18,7 @@ end
 """
 Returns true is K is a valid Kraus tensor. Checks completeness.
 """
-function isvalidkraus(K::ITensor, sites)
+function isvalidkraus(K::ITensor, sites; atol=1e-10)
     # Put Kraus tensor into canonical form
     # K = getcanonicalkraus(K)
     krausidx = getkrausind(K)
@@ -22,7 +27,7 @@ function isvalidkraus(K::ITensor, sites)
     Kdag = swapprime(dag(K), 0 => 1) * δ(krausidx, krausidx')
     complete = apply(Kdag, K)
     delt = *([δ(ind, ind') for ind in sites]...)
-    return complete ≈ delt
+    return isapprox(complete, delt; atol)
 end
 
 """

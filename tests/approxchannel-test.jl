@@ -1,5 +1,6 @@
 
 using ITensors
+using LinearAlgebra
 using Test
 
 include("../src/circuit.jl")
@@ -7,7 +8,20 @@ include("../src/utilities.jl")
 include("../src/approxchannel.jl")
 include("../src/kraus.jl")
 
-@testset "approxchannel tests" begin
+@testset "approxchannel matrix tests" begin
+    @testset "identity" begin
+        # make a density
+        arr = [1, 2, 3, 4]
+        psi = arr / norm(arr)
+        rho = psi * psi'
+
+        # identity test
+        Ks, optloss, initloss, iterdata, model = approxquantumchannel(rho, rho, nkraus=1)
+        K = Ks[:, :, 1]
+        # K' * K = I from completeness, K * K' = I because K should be similar to I.
+        @test K * K' ≈ I
+    end
+
     @testset "array function with random mpo truncation" begin
         # 1. generate random density matrices
         nsites = 2
@@ -28,7 +42,7 @@ include("../src/kraus.jl")
         nkraus = 6
         ρ = toarray(rho, sites, sites')
         ρ̃ = toarray(trho, sites, sites')
-        Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃, nkraus=nkraus, silent=true)
+        Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃, nkraus=nkraus)
 
         # Check completeness
         compl = +([Ki' * Ki for Ki in eachslice(Ks, dims=3)]...)
@@ -42,14 +56,6 @@ include("../src/kraus.jl")
         approx = apply(K, rho, apply_dag=true)
         @test sum(norm.(array(*(approx...) - *(trho...))) .^ 2) ≈ optloss
 
-        @test iscomplete(K, sites)
+        @test isvalidkraus(K, sites; atol=1e-8)
     end
-
-    #TODO check approximation matches applied channel
-    @testset "identity" begin end
-
-    @testset "depolarizing" begin end
-
-    @testset "dephasing" begin end
-
 end;
