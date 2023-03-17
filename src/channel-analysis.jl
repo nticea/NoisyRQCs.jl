@@ -34,7 +34,6 @@ function paulibasislabels(n::Int)
         [l for l in ["I", "x", "y", "z"]]
         for _ in 1:n
     ]
-
     return [*(ops...) for ops in Iterators.product(sitelabels...)]
 end
 
@@ -64,12 +63,14 @@ function paulidecomp(K, sites)
 end
 
 """
-Reshape a 2D matrix of 1D tensors to a 3D array
+Reshape an ND array of 1D tensors to a (N+1)D array. Assumes all 1D tensors
+have the same dimension.
 """
-function tensmatrix_to_arr(Ts::Matrix{ITensor})
-    coeffsraw = array.(Ts) # Matrix{Vector}
-    n3d = size(coeffsraw[1, 1])[1]
-    return cat([getindex.(coeffsraw, Ref(i)) for i in 1:n3d]..., dims=3)
+function tensarr_to_arr(Ts::Array{ITensor})
+    vecarr = array.(Ts) # Array{Vector}
+    veclength = length(first(vecarr))
+    newdim = ndims(vecarr) + 1
+    return cat([getindex.(vecarr, Ref(i)) for i in 1:veclength]..., dims=newdim)
 end
 
 """
@@ -154,7 +155,7 @@ function analyzekraus(K, sites; usecanonical=true)
 
     # perform pauli decomposition
     pdtens, basis, labels = paulidecomp(K, sites)
-    pdarr = tensmatrix_to_arr(pdtens)
+    pdarr = tensarr_to_arr(pdtens)
 
     # Get norm distribution
     normtensor = frobneiusnorm(K, getkrausind(K))
