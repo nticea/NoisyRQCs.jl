@@ -1,24 +1,99 @@
-using Plots 
-using ImageUtils
+## IMPORTS ##
+using Pkg
+Pkg.activate(joinpath(@__DIR__, ".."))
+include("../src/circuit.jl")
+include("../src/results.jl")
+using Random
 
-loss_hist = [1.1367099, 1.1322569, 1.123179, 1.1127692, 1.1080989, 1.1074486, 1.1073045,
-            1.1072851, 1.1072813, 1.1072808, 1.1072807, 1.1072807, 1.1072807, 1.1072807, 
-            1.1072807, 1.1072807, 1.1072807, 1.1072807, 1.1072807, 1.1072807, 1.1072807, 
-            1.1072807, 1.1072807, 1.1072807, 1.1072807, 1.1072807]
+ITensors.set_warn_order(50)
+Random.seed!(123456)
 
-K1 = ComplexF64[0.43543335842741615 - 0.04523516653404889im 0.16683043449343796 - 0.09036361371593139im -0.1134479344086847 - 0.09321132206136949im -0.11259430048073546 + 0.07722227479193174im; -0.11281309005010275 - 0.022461727591531644im 0.4523887210637255 + 0.10514374654414214im 0.12942221638878343 - 0.03850650716537876im 0.027304990104881514 + 0.04666004914812755im; 0.0608411873920308 - 0.06000743383889478im 0.0032426946074231434 - 0.10836232188198612im 0.4732784875705696 + 0.014390061962029507im 0.0008669505676109344 + 0.05135587699321367im; 0.07092015283723803 - 0.019745764298728402im -0.032771565927385976 + 0.05243846589475879im 0.013818910830968326 + 0.027888909026420047im 0.4777313789414362 - 0.05530482441797088im]            
-K2 = ComplexF64[0.48490396205343334 - 0.06084855113039638im 0.1847487972487103 + 0.04898087228027259im -0.014588143669897882 - 0.06879980648194335im -0.024060347061302726 + 0.07616356242955322im; -0.13802467243685276 - 0.013064348101013442im 0.4506801470418959 + 0.009280941059379563im 0.07302366358950331 - 0.04751658532075734im 0.03363313659525973 + 0.061142520009845325im; 0.05528438130600437 - 0.028502033869388942im -0.13824421197323097 - 0.1668020838473679im 0.43423323201193875 + 0.07289368734990942im 0.006079253520161848 - 0.030149162380869038im; 0.07635968577363528 - 0.028244075628209814im -0.002580167546615858 + 0.08413824553566279im 0.03237105614260059 + 0.016408786485868132im 0.4694768421085788 - 0.04103663337567925im]
-K3 = ComplexF64[0.46661691390009546 - 0.02585894776174444im 0.021623239236892345 - 0.054548819148729624im -0.08050295126820453 - 0.01581389772941357im -0.029362843380250674 - 0.027551018983313406im; -0.12860975907507588 - 0.019383773833863804im 0.4727630208515553 + 0.04949396769964561im 0.09655814528668627 - 0.05064042380956716im 0.03232683208322547 + 0.07509489813394019im; 0.07209682337799589 - 0.050417193082182975im -0.05905271812762719 - 0.06382920719298985im 0.48903165717396796 + 0.045236719191008655im -0.03486022094937678 + 0.012817319526822784im; 0.07096673015886225 - 0.02377325440658194im -0.016215519661586148 + 0.05566298154326697im 0.017386635181733986 + 0.020008507014449232im 0.47957881199798147 - 0.048276550500949866im]
-K4 = ComplexF64[0.4790063859530173 - 0.07690416094005484im 0.14602937657771134 + 0.05215204944087712im -0.0009193190022938298 - 0.09122546642816098im -0.0714014471349073 - 0.09838854211402813im; -0.1270337572005307 + 0.00010174390822698089im 0.40630340951334626 + 0.028540230549201764im 0.07875688906887085 - 0.013270927621459726im 0.047406739865799165 + 0.07484310392602009im; 0.07839822397286637 - 0.04583397229521284im -0.07526485414326148 - 0.02765820847913119im 0.49849796820542475 + 0.056608386442247915im -0.07390426878928973 + 0.03081757708448554im; 0.06857108783239202 - 0.027193670207954837im -0.0016778182590231584 + 0.04764382801789886im 0.01583557197015287 + 0.011725321916243172im 0.48668579739001433 - 0.04807443126229429im]
+## PARAMETERS ## 
+L = 9
+T = 4
+maxdims = nothing
+random_type = "Haar"
 
+# Initialize the wavefunction to product state (all 0)
+ψ0 = initialize_wavefunction(L=L)
+sites = siteinds(ψ0)
 
-p0 = plot(1:length(loss_hist), loss_hist)
-xlabel!("Iteration")
-ylabel!("Loss")
-title!("Converging to optimal solution")
+# Make the density matrix 
+global ρ = density_matrix(copy(ψ0))
 
-plot(p0)
+function my_svd(A::ITensor, Linds...)
 
-# toplot = (real.(Ks)) .^ 2
-# p1 = heatmap(toplot, c=:jet, vmin=0, vmax=1)
-# plot(p0, p1, layout=Plots.grid(1,2, widths=(1/2,1/2)), size=(1200,400))
+    # Keyword argument deprecations
+    #if haskey(kwargs, :utags) || haskey(kwargs, :vtags)
+    #  @warn "Keyword arguments `utags` and `vtags` are deprecated in favor of `leftags` and `righttags`."
+    #end
+
+    Lis = commoninds(A, Linds)
+    Ris = uniqueinds(A, Lis)
+
+    CL = combiner(Lis...)
+    CR = combiner(Ris...)
+
+    AC = A * CR * CL
+
+    cL = combinedind(CL)
+    cR = combinedind(CR)
+
+    @show inds(AC)
+    @show cL
+    @show cR
+
+    if inds(AC) != (cL, cR)
+        AC = permute(AC, cL, cR)
+    end
+
+    F = LinearAlgebra.svd(array(AC))
+    return F.S
+end
+
+function my_svn(T::ITensor)
+    sites = tag_and_plev(T; tag="Site", lev=0)
+    S = my_svd(T, sites...)
+    SvN = 0.0
+    for p in S
+        if p != 0
+            SvN -= p * log(p)
+        end
+    end
+    return SvN
+end
+
+for t in 1:2:T
+    A = 1
+    for B in collect(2:L)
+        @show A, B
+
+        ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
+
+        SA = my_svn(ρA)
+        SB = my_svn(ρB)
+        SAB = my_svn(ρAB)
+        MI = SA + SB - SAB
+
+        @show SA, SB, SAB
+        @show MI
+
+        # ρA = permute_to_svd_form(ρA)
+        # ρB = permute_to_svd_form(ρB)
+        # ρAB = permute_to_svd_form(ρAB)
+
+        # @show array(ρA)
+        # @show array(ρB)
+        # @show array(ρAB)
+    end
+
+    # At each time point, make a layer of random unitary gates 
+    unitary_gates = unitary_layer(sites, t, random_type)
+
+    # Now apply the gates to the wavefunction (alternate odd and even) 
+    # for u in unitary_gates
+    #     global ρ = apply_twosite_gate(ρ, u, maxdim=maxdims)
+    # end
+    global ρ = apply_twosite_gate(ρ, unitary_gates[1], maxdim=maxdims)
+    global ρ = apply_twosite_gate(ρ, unitary_gates[2], maxdim=maxdims)
+end

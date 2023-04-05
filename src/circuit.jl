@@ -19,7 +19,7 @@ end
 """
 Apply a random circuit to the wavefunction ψ0
 """
-function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05,
+function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
     benchmark=false, maxdim=nothing, disentangler_channel::Bool=false, nkraus::Int=4)
     L = length(ψ0)
     if isnothing(maxdim)
@@ -35,7 +35,7 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05,
         state_entanglement = zeros(Float64, T)
         operator_entanglement = zeros(Float64, T, L - 3)
         trace = zeros(Float64, T)
-        lognegs = zeros(Float64, T, L)
+        lognegs = zeros(Float64, T)
         MIs = zeros(Float64, T, L)
     end
 
@@ -61,26 +61,21 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05,
             end
             operator_entanglement[t, :] = SvN
 
+            # Compute the logarithmic negativity
+            lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
+
             # trace
             trace[t] = real.(tr(ρ))
             @show trace[t]
 
-            # logarithmic negativity and mutual information 
-            # A = 1
-            # for B in collect(2:L)
-            #     ρAB = twosite_reduced_density_matrix(ρ, A, B)
-            #     ρA = reduced_density_matrix(ρ, [A])
-            #     ρB = reduced_density_matrix(ρ, [B])
+            # mutual information 
+            A = 1
+            for B in collect(2:L)
+                ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
 
-            #     # Compute the logarithmic negativity
-            #     lognegs[t, B] = logarithmic_negativity(ρAB, [1])
-
-            #     # Compute the mutual information 
-            #     MIs[t, B] = mutual_information(ρA, ρB, ρAB)
-
-            # end
-            # @show lognegs[t, :]
-            # @show MIs[t, :]
+                # Compute the mutual information 
+                MIs[t, B] = mutual_information(ρA, ρB, ρAB)
+            end
         end
 
         # At each time point, make a layer of random unitary gates 
@@ -88,23 +83,21 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0.05,
 
         # Now apply the gates to the wavefunction (alternate odd and even) 
         for u in unitary_gates
-            if disentangler_channel
-                ρ = @profile apply_twosite_gate_approximate_truncation(ρ, u, maxdim; nkraus=nkraus)
-            else
-                ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
-            end
+            ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
+            # if disentangler_channel
+            #     ρ = @profile apply_twosite_gate_approximate_truncation(ρ, u, maxdim; nkraus=nkraus)
+            # else
+            #     ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
+            # end
         end
 
         # Make the noise gates for this layer 
         noise_gates = noise_layer(sites, ε)
 
-        # Now apply the noise layer 
-        for n in noise_gates
+        for n in noise_gates # Now apply the noise layer 
             ρ = apply_onesite_gate(ρ, n)
         end
     end
-
-    @show tr(ρ)
 
     if benchmark
         return ρ, state_entanglement, operator_entanglement, lognegs, MIs, trace

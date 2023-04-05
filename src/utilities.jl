@@ -26,61 +26,109 @@ function complement(L::Int, B::Vector{Int})
     setdiff(collect(1:L), B)
 end
 
+function partial_transpose(A::MPO, sites)
+    A = copy(A)
+    for n in sites
+        A[n] = swapinds(A[n], siteinds(A, n)...)
+    end
+    return A
+end
+
+function trace_norm(ρ)
+    ρabs = copy(ρ)
+    for (i, ρ_i) in enumerate(ρ)
+        ρ_i_abs = ITensor(abs.(array(ρ_i)), inds(ρ_i)...)
+        ρabs[i] = ρ_i_abs
+    end
+    return tr(ρabs)
+end
+
 """
 EN(ρ_AB) = log₂||ρ_AB^(T_B)||₁
 """
 function logarithmic_negativity(ρ::MPO, B::Vector{Int})
+    # compute the partial transpose 
+    ρT = partial_transpose(ρ, B)
 
-    A = complement(length(ρ), B)
+    # take the trace norm 
+    trnorm = trace_norm(ρT)
 
-    Linds = physical_indices(ρ)
-    Rinds = copy(Linds)
-
-    # take the partial transpose for the subset in B 
-    Linds[B] .= prime.(Linds[B])
-    Rinds[A] .= prime.(Rinds[A])
-
-    ## NOTE: WE NEED TO TURN ρ INTO A TENSOR!! BUT THAT MIGHT BE HUGE! ## 
-    # First, we should take the reduced density matrix # 
-    T = prod(ρ)
-    D, U = eigen(T, Linds, Rinds)
-
-    # Compute the nuclear (trace) norm
-    return sum(abs.(array(D)))
+    # take the logarithm 
+    return log2.(trnorm)
 end
 
 function twosite_reduced_density_matrix(ρ::MPO, A::Int, B::Int)
-    @assert A != B
+    ρ = copy(ρ)
+    sites = siteinds(ρ)
+
+    # new rdm 
+    ρAB = ITensor(1.0)
+
+    if A == B
+        return 0
+    end
+
     if B < A
+        println("For some reason, B<A")
         A, B = B, A
     end
 
-    # Trace out the indices on either side of A and B 
-    # Keep only the indices between A and B, including A and B 
-    ρAB = reduced_density_matrix(ρ, collect(A:B))
-
-    # Now trace out the indices between A and B 
-    if B - A > 1
-        ## BUG HERE!! ##
-        ρAB = partial_trace(ρAB, collect(1:(length(ρAB)-1)), "left")
+    # trace out everything on the left and multiply into ρAB
+    for i in 1:(A-1)
+        ρAB = ρAB * ρ[i] * delta(sites[i][1], sites[i][2])
     end
 
-    return ρAB
+    # don't trace out site A 
+    ρAB = ρAB * ρ[A]
+
+    # trace out everything between A and B and multiply into ρAB
+    for i in (A+1):(B-1)
+        ρAB = ρAB * ρ[i] * delta(sites[i][1], sites[i][2])
+    end
+
+    # don't trace out site B
+    ρAB = ρAB * ρ[B]
+
+    # trace out everything to the right of B and multiply into ρB
+    for i in (B+1):length(ρ)
+        ρAB = ρAB * ρ[i] * delta(sites[i][1], sites[i][2])
+    end
+
+    # trace out B to get ρA
+    ρA = ρAB * delta(sites[B][1], sites[B][2])
+
+    # trace out A to get ρB
+    ρB = ρAB * delta(sites[A][1], sites[A][2])
+
+    # put everything back into MPO form 
+    ρA = MPO([ρA])
+    ρB = MPO([ρB])
+    sL = tag_and_plev(ρAB; tag="Site,n=$(A)", lev=0)
+    U, S, V = ITensors.svd(ρAB, [sL, prime(sL)], cutoff=0, lefttags="Link,l=$(A)", righttags="Link,l=$(A)")
+    ρAB = MPO([U, S * V])
+
+    return ρA, ρB, ρAB
 end
 
 function von_neumann_entropy(ρ::MPO)
-    sites = physical_indices(ρ)
     T = prod(ρ)
-    U, S, V = svd(T, sites, prime.(sites))
+    von_neumann_entropy(T)
+end
+
+function von_neumann_entropy(T::ITensor)
+    sites = tag_and_plev(T; tag="Site", lev=0)
+    U, S, V = svd(T, sites)
     SvN = 0.0
     for n = 1:ITensors.dim(S, 1)
-        p = S[n, n]^2
-        SvN -= p * log(p)
+        p = S[n, n]
+        if p != 0
+            SvN -= p * log(p)
+        end
     end
     return SvN
 end
 
-function mutual_information(ρA::MPO, ρB::MPO, ρAB::MPO)
+function mutual_information(ρA::Union{ITensor,MPO}, ρB::Union{ITensor,MPO}, ρAB::Union{ITensor,MPO})
     SA = von_neumann_entropy(ρA)
     SB = von_neumann_entropy(ρB)
     SAB = von_neumann_entropy(ρAB)
@@ -100,11 +148,15 @@ function entanglement_entropy(ψ::MPS; b=nothing)
     end
     orthogonalize!(ψ, b)
     U, S, V = svd(ψ[b], (linkind(ψ, b - 1), siteind(ψ, b)))
+    S = diag(array(S))
+
     SvN = 0.0
-    for n = 1:ITensors.dim(S, 1)
-        p = S[n, n]^2
-        SvN -= p * log(p)
+    for p in S
+        # here, we DO want to square the singular values
+        # this is because we are computing the entropy of a CUT 
+        SvN -= p^2 * log(p^2)
     end
+
     return SvN
 end
 
@@ -176,7 +228,7 @@ function partial_trace(ρ::MPO, indslist::Vector{Int}, side::String)
         @error side * " is not recognized"
     end
 
-    #orthogonalize!(ρ, border_idx)
+    orthogonalize!(ρ, border_idx)
 
     # trace out the indices in indslist
     for i in indslist

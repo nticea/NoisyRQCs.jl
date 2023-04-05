@@ -152,7 +152,7 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         state_entanglement = zeros(Float64, T)
         operator_entanglement = zeros(Float64, T, L - 3)
         trace = zeros(Float64, T)
-        lognegs = zeros(Float64, T, L)
+        lognegs = zeros(Float64, T)
         MIs = zeros(Float64, T, L)
     end
 
@@ -187,7 +187,6 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             if normalize_ρ
                 state_entanglement[t] *= trace[t]
             end
-            @show real(SR2)
 
             # Calculate the operator entropy
             Ψ = combine_indices(ρ)
@@ -196,24 +195,18 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
                 push!(SvN, entanglement_entropy(Ψ, b=b))
             end
             operator_entanglement[t, :] = SvN
-            @show SvN
 
-            # Compute ρ_A, ρ_B, and ρ_AB for two sites A and B 
+            # Compute the logarithmic negativity
+            lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
+
+            # mutual information 
             A = 1
             for B in collect(2:L)
-                ρAB = twosite_reduced_density_matrix(ρ, A, B)
-                ρA = reduced_density_matrix(ρ, [A])
-                ρB = reduced_density_matrix(ρ, [B])
-
-                # Compute the logarithmic negativity
-                lognegs[t, B] = logarithmic_negativity(ρAB, [1])
+                ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
 
                 # Compute the mutual information 
                 MIs[t, B] = mutual_information(ρA, ρB, ρAB)
-
             end
-            @show lognegs[t, :]
-            @show MIs[t, :]
 
         end
 
