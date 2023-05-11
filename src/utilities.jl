@@ -59,13 +59,13 @@ end
 EN(ρ_AB) = log₂||ρ_AB^(T_B)||₁
 """
 function logarithmic_negativity(ρ::MPO, B::Vector{Int})
-    # compute the partial transpose 
+    # compute the partial transpose
     ρT = partial_transpose(ρ, B)
 
-    # take the trace norm 
+    # take the trace norm
     trnorm = trace_norm(ρT)
 
-    # take the logarithm 
+    # take the logarithm
     return log2.(trnorm)
 end
 
@@ -73,7 +73,7 @@ function twosite_reduced_density_matrix(ρ::MPO, A::Int, B::Int)
     ρ = copy(ρ)
     sites = siteinds(ρ)
 
-    # new rdm 
+    # new rdm
     ρAB = ITensor(1.0)
 
     if A == B
@@ -90,7 +90,7 @@ function twosite_reduced_density_matrix(ρ::MPO, A::Int, B::Int)
         ρAB = ρAB * ρ[i] * delta(sites[i][1], sites[i][2])
     end
 
-    # don't trace out site A 
+    # don't trace out site A
     ρAB = ρAB * ρ[A]
 
     # trace out everything between A and B and multiply into ρAB
@@ -112,7 +112,7 @@ function twosite_reduced_density_matrix(ρ::MPO, A::Int, B::Int)
     # trace out A to get ρB
     ρB = ρAB * delta(sites[A][1], sites[A][2])
 
-    # put everything back into MPO form 
+    # put everything back into MPO form
     ρA = MPO([ρA])
     ρB = MPO([ρB])
     sL = tag_and_plev(ρAB; tag="Site,n=$(A)", lev=0)
@@ -165,7 +165,7 @@ function entanglement_entropy(ψ::MPS; b=nothing)
     SvN = 0.0
     for p in S
         # here, we DO want to square the singular values
-        # this is because we are computing the entropy of a CUT 
+        # this is because we are computing the entropy of a CUT
         SvN -= p^2 * log(p^2)
     end
 
