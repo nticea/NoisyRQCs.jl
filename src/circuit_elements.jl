@@ -130,6 +130,47 @@ function apply_twosite_gate(ρ::Union{MPO,MPS}, G::ITensor; maxdim=nothing)
     return ρ
 end
 
+"""
+Apply a quantum channel ("gate") to a density matrix 
+"""
+function apply_twosite_gate_multithread(ρ::Union{MPO,MPS}, G::ITensor; maxdim=nothing)
+    ρ = copy(ρ)
+
+    # Extract the common indices where we will be applying the channel 
+    c = findall(x -> hascommoninds(G, ρ[x]), collect(1:length(ρ)))
+    @assert length(c) == 2
+    c1, c2 = c
+
+    # Orthogonalize the MPS around this site 
+    orthogonalize!(ρ, c1)
+
+    # Apply the gate 
+    if typeof(ρ) == ITensors.MPO
+        G = G * prime(dag(G))
+    end
+    wf = (ρ[c1] * ρ[c2]) * G
+
+    # Lower the prime level by 1 to get back to what we originally had 
+    if typeof(ρ) == ITensors.MPO
+        wf = replaceprime(wf, 3 => 1)
+        wf = replaceprime(wf, 2 => 0)
+    elseif typeof(ρ) == ITensors.MPS
+        wf = replaceprime(wf, 2 => 0)
+    end
+
+    # SVD the resulting tensor 
+    inds3 = uniqueinds(ρ[c1], ρ[c2])
+
+
+    if isnothing(maxdim) # If maxdim is nothing, then implement no truncation cutoff
+        U, S, V = ITensors.svd(wf, inds3, cutoff=0, lefttags="Link,l=$(c1)", righttags="Link,l=$(c2)")
+    else
+        U, S, V = ITensors.svd(wf, inds3, maxdim=maxdim, lefttags="Link,l=$(c1)", righttags="Link,l=$(c2)")
+    end
+
+    return U, S * V, c1, c2
+end
+
 function apply_onesite_gate(ρ::MPO, G::ITensor)
     ρ = copy(ρ)
 

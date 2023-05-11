@@ -4,6 +4,7 @@ using StatsBase
 using CurveFit
 using ITensors: linkinds
 import Base.isapprox
+using ITensors.HDF5
 
 function initialize_wavefunction(; L::Int)
     @assert isodd(L) "L must be odd"
@@ -12,12 +13,23 @@ function initialize_wavefunction(; L::Int)
     productMPS(sites, state_arr)
 end
 
+function average_elems(A::Vector{Any})
+    A0 = copy(A[1])
+    for Ai in A[2:end]
+        @assert size(Ai) == size(A0)
+        A0 .+= Ai
+    end
+    A0 ./= length(A)
+    return A0
+end
+
 """
 Helper function to initialize a density matrix from a wavefunction
 """
 function density_matrix(ψ::MPS)
     sites = physical_indices(ψ)
-    ψdag = dag(prime(ψ, sites))
+    #ψdag = dag(prime(ψ, sites))
+    ψdag = prime(ψ, sites)
     prime!(ψdag, "Link")
     return outer(ψ, ψdag)
 end
@@ -338,6 +350,19 @@ end
 #     return true
 # end
 
+function splat_struct(struc)
+    function Name(arg)
+        string(arg)
+    end
+    fnames = fieldnames(typeof(struc))
+    vec = []
+    for fn in fnames
+        n = Name(fn)
+        push!(vec, getfield(struc, fn))
+    end
+    return vec
+end
+
 function save_structs(struc, path::String)
     function Name(arg)
         string(arg)
@@ -365,14 +390,9 @@ function save_structs(struc, path::String)
     end
 end
 
-function load_results(loadpath::String; load_state=false)
+function load_results(loadpath::String)
     f = h5open(loadpath, "r")
-    if load_state
-        ρ = read(f, "ρ", MPO)
-    else
-        ρ = 0
-    end
     d = read(f)
-    return Results(d["L"], d["T"], ρ, d["bitdist"], d["state_entropy"],
-        d["operator_entanglement"], d["trace"])
+    return Results(d["L"], d["T"], d["ε"], d["maxdim"], d["max_inner_dim"], d["state_entropy"],
+        d["operator_entanglement"], d["trace"], d["logarithmic_negativity"], d["mutual_information"])
 end

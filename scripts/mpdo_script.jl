@@ -11,55 +11,65 @@ L = 9
 T = 100
 εs = [0]
 maxdim = 16
-max_inner_dims = [16]
+max_inner_dims = [14,16]
 normalize_ρ = true
 
-# Initialize the wavefunction to product state (all 0)
-ψ0 = initialize_wavefunction(L=L)
+function mpdo_circuit_run(; L, T, maxdim, εs, max_inner_dims, normalize_ρ::Bool=true)
+    # Initialize the wavefunction to product state (all 0)
+    ψ0 = initialize_wavefunction(L=L)
 
-global st_ents = []
-global op_ents = []
-global traces = []
-global lognegs = []
-global mutual_infos = []
-for ε in εs
-    stents = []
-    opents = []
-    ts = []
-    lns = []
-    MIs = []
-    for max_inner_dim in max_inner_dims
-        @show ε, max_inner_dim
-        # Apply the MPDO circuit
-        ψ, state_entanglement, operator_entanglement, logneg, MI, trace = apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim,
-            max_inner_dim=max_inner_dim, benchmark=true, normalize_ρ=normalize_ρ)
-        push!(stents, state_entanglement)
-        push!(opents, operator_entanglement)
-        push!(ts, trace)
-        push!(lns, logneg)
-        push!(MIs, MI)
+    st_ents = []
+    op_ents = []
+    traces = []
+    lognegs = []
+    mutual_infos = []
+
+    for ε in εs
+        stents = []
+        opents = []
+        ts = []
+        lns = []
+        MIs = []
+        for max_inner_dim in max_inner_dims
+            @show ε, max_inner_dim
+            # Apply the MPDO circuit
+            ψ, state_entanglement, operator_entanglement, logneg, MI, trace = @time apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim,
+                max_inner_dim=max_inner_dim, benchmark=true, normalize_ρ=normalize_ρ)
+            push!(stents, state_entanglement)
+            push!(opents, operator_entanglement)
+            push!(ts, trace)
+            push!(lns, logneg)
+            push!(MIs, MI)
+        end
+        push!(st_ents, stents)
+        push!(op_ents, opents)
+        push!(traces, ts)
+        push!(lognegs, lns)
+        push!(mutual_infos, MIs)
     end
-    push!(st_ents, stents)
-    push!(op_ents, opents)
-    push!(traces, ts)
-    push!(lognegs, lns)
-    push!(mutual_infos, MIs)
+
+    return st_ents, op_ents, traces, lognegs, mutual_infos
 end
+
+# actually run the script 
+st_ents, op_ents, traces, lognegs, mutual_infos = mpdo_circuit_run(L=L, T=T, maxdim=maxdim, εs=εs, max_inner_dims=max_inner_dims, normalize_ρ=normalize_ρ)
 
 ## PLOTTING ## 
 
 global p1 = plot()
 global p2 = plot()
 global p3 = plot()
+global p4 = plot()
+global p5 = plot()
 
 ε_cmap = cgrad(:Set1_4, 4, categorical=true)
 innerdim_ls = [:solid, :dash, :dot]
 
 for (i, ε) in enumerate(εs)
-    for (j, max_inner_dim) in enumerate(max_inner_dims)
+    for (j, maxdim) in enumerate(max_inner_dims)
         # state entropy
         toplot = st_ents[i][j]
-        global p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Second Rényi Entropy of State at L/2", legend=:bottomright)
 
         # operator entropy 
@@ -69,26 +79,29 @@ for (i, ε) in enumerate(εs)
             S = transpose(S)
         end
         toplot = S[mid, :]
-        global p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Operator Entanglement Entropy at L/2", legend=:bottomright)
 
         # trace 
         toplot = traces[i][j]
-        global p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), innerdim=$(max_inner_dim)",
+        global p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Trace", legend=:bottomright)
 
-        # logarthmic negativity 
-        toplot = lognegs[i][j][:, 2:end]
-        global p4 = heatmap(toplot)
+        # logarithmic negativity
+        toplot = lognegs[i][j]
+        global p4 = plot!(p4, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
+            c=ε_cmap[i], ls=innerdim_ls[j], title="Logarithmic negativity", legend=:bottomright)
 
-        # logarthmic negativity 
-        toplot = mutual_infos[i][j][1:20, 2:end]
-        global p4 = heatmap(toplot)
+        # mutual information
+        toplot = mutual_infos[i][j]
+        global p5 = heatmap(toplot, xlabel="Distance (sites)", ylabel="Time", title="Mutual Information")
 
     end
 end
 
-plot(p1, p2, p3, layout=Plots.grid(1, 3, widths=[1 / 3, 1 / 3, 1 / 3]), size=(2000, 500))
+p1 = hline!(p1, [saturation_value(L)], label=["saturation value"])
+plot(p1, p2, p3, p4, layout=Plots.grid(2, 2, widths=[1 / 2, 1 / 2]), size=(1500, 1500))
+#plot(p4, p5, layout=Plots.grid(1, 2, widths=[1 / 2, 1 / 2]), size=(1400, 500))
 
 # plot_entropy(state_entanglement, L, title="MPDO Second Renyi entropy, ε=$(ε)")
 # plot_operator_entanglement(op_entanglement, L, title="MPDO operator entropy, ε=$(ε)")

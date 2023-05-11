@@ -2,15 +2,19 @@ using ITensors
 using Plots
 using StatsBase
 using CurveFit
+using ITensors.HDF5
 
 struct Results
     L::Int
     T::Int
-    ρ::Union{MPO,Int64}
-    bitdist::Vector{Float64}
+    ε::Real
+    maxdim::Int
+    max_inner_dim::Union{Int,Nothing}
     state_entropy::Vector{Float64}
     operator_entanglement::Matrix{Float64}
     trace::Vector{Float64}
+    logarithmic_negativity
+    mutual_information
 end
 
 function entropy_dim(l::Int; d=2::Int)
@@ -193,5 +197,3 @@ function probability_distribution(m::MPS)
     end
     return probs
 end
-
-using ITensors.HDF5

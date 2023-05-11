@@ -1,28 +1,67 @@
 
 ## IMPORTS ##
 using Pkg
-Pkg.activate(joinpath(@__DIR__,".."))
+Pkg.activate(joinpath(@__DIR__, ".."))
 include("../src/circuit.jl")
 include("../src/utilities.jl")
 
 ITensors.set_warn_order(50)
 
-## LOADING IN RESULTS ##
-#dir = "/Users/nicole/sherlock/code/NoisyRQCs.jl/outputs/benchmark"
-#fnames = filter(contains(r".h5$"), readdir(dir; join=true))
-#r1 = load_results(fnames[1])
-r1 = load_results("/Users/nicole/Dropbox/Grad school/Vedika/noisy_RQCs/NoisyRQCs.jl/outputs/preliminary/results/2022-11-19_15:14:26_11L_100T_0ε_200maxdim.h5")
-L = r1.L
-T = r1.T
+# get all loadpaths with system size L 
+L = 9
+files = readdir(@__DIR__)
+for f in files
+    if startswith(f, "$(L)Nx_results.h5")
+        results = load_results(joinpath(@__DIR__, f))
+        L̃, T, ε, maxdim, max_inner_dim, st_ent, op_ent, trace, logneg, mutual_info = splat_struct(results)
+        @assert L̃ == L
+    end
+    map(push!, [εs, max_inner_dims], [ε, max_inner_dim])
+end
 
-# bitdist = zeros(length(fnames), 4^L)
-# entropy = zeros(length(fnames), T)
-# for (n,fn) in enumerate(fnames)
-#     results = load_results(fn)
-#     bitdist[n,:] = results.bitdist
-#     entropy[n,:] = results.entropy
-# end
+global p1 = plot()
+global p2 = plot()
+global p3 = plot()
+global p4 = plot()
+global p5 = plot()
 
-# _porter_thomas_fit(vec(bitdist), 2^L, true)
-# entropy_avg = vec(mean(entropy, dims=1))
-# plot_entropy(entropy_avg, L)
+ε_cmap = cgrad(:Set1_4, 4, categorical=true)
+innerdim_ls = [:solid, :dash, :dot]
+
+for (i, ε) in enumerate(εs)
+    for (j, maxdim) in enumerate(max_inner_dims)
+        # state entropy
+        toplot = st_ents[i][j]
+        global p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
+            c=ε_cmap[i], ls=innerdim_ls[j], title="Second Rényi Entropy of State at L/2", legend=:bottomright)
+
+        # operator entropy 
+        S = op_ents[i][j]
+        mid = floor(Int, L / 2)
+        if size(S)[1] != L
+            S = transpose(S)
+        end
+        toplot = S[mid, :]
+        global p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
+            c=ε_cmap[i], ls=innerdim_ls[j], title="Operator Entanglement Entropy at L/2", legend=:bottomright)
+
+        # trace 
+        toplot = traces[i][j]
+        global p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
+            c=ε_cmap[i], ls=innerdim_ls[j], title="Trace", legend=:bottomright)
+
+        # logarithmic negativity
+        toplot = lognegs[i][j]
+        global p4 = plot!(p4, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
+            c=ε_cmap[i], ls=innerdim_ls[j], title="Logarithmic negativity", legend=:bottomright)
+
+        # mutual information
+        toplot = mutual_infos[i][j]
+        global p5 = heatmap(toplot, xlabel="Distance (sites)", ylabel="Time", title="Mutual Information")
+
+    end
+end
+
+p1 = hline!(p1, [saturation_value(L)])
+plot(p1, p2, p3, layout=Plots.grid(1, 3, widths=[1 / 3, 1 / 3, 1 / 3]), size=(2000, 500))
+plot(p4, p5, layout=Plots.grid(1, 2, widths=[1 / 2, 1 / 2]), size=(1400, 500))

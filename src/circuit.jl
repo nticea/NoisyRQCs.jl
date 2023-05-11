@@ -20,7 +20,7 @@ end
 Apply a random circuit to the wavefunction ψ0
 """
 function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
-    benchmark=false, maxdim=nothing, disentangler_channel::Bool=false, nkraus::Int=4)
+    benchmark=false, maxdim=nothing, disentangler_channel::Bool=false, nkraus::Int=4, normalize_ρ::Bool=true)
     L = length(ψ0)
     if isnothing(maxdim)
         println("No truncation")
@@ -48,15 +48,22 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
             # The maximum link dimension
             @show maxlinkdim(ρ)
 
+            # trace
+            trace[t] = real.(tr(ρ))
+            @show trace[t]
+
             # Calculate the second Renyi entropy (state entanglement)
             ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L / 2)))
             SR2 = second_Renyi_entropy(ρ_A)
             state_entanglement[t] = real(SR2)
+            if normalize_ρ
+                state_entanglement[t] *= trace[t]
+            end
 
             # Calculate the operator entropy
             Ψ = combine_indices(ρ)
             SvN = []
-            for b in 2:(L-2)
+            Threads.@threads for b in 2:(L-2)
                 push!(SvN, entanglement_entropy(Ψ, b=b))
             end
             operator_entanglement[t, :] = SvN
@@ -64,13 +71,9 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
             # Compute the logarithmic negativity
             lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
 
-            # trace
-            trace[t] = real.(tr(ρ))
-            @show trace[t]
-
             # mutual information 
             A = 1
-            for B in collect(2:L)
+            Threads.@threads for B in collect(2:L)
                 ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
 
                 # Compute the mutual information 
@@ -82,8 +85,9 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
         unitary_gates = unitary_layer(sites, t, random_type)
 
         # Now apply the gates to the wavefunction (alternate odd and even) 
-        for u in unitary_gates
+        Threads.@threads for u in unitary_gates
             ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
+
             # if disentangler_channel
             #     ρ = @profile apply_twosite_gate_approximate_truncation(ρ, u, maxdim; nkraus=nkraus)
             # else
@@ -94,7 +98,7 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
         # Make the noise gates for this layer 
         noise_gates = noise_layer(sites, ε)
 
-        for n in noise_gates # Now apply the noise layer 
+        Threads.@threads for n in noise_gates # Now apply the noise layer 
             ρ = apply_onesite_gate(ρ, n)
         end
     end
