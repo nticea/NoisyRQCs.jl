@@ -96,11 +96,13 @@ function combineoutsidelinks(M::ITensors.AbstractMPS)
 end
 
 """
-Approximate a final MPO with a quantum channel applied to a initial MPO.
+Approximate a final MPO with a quantum channel applied to a initial MPO. Handles MPOs with
+"loose links" on first and last sites
 """
 function approxquantumchannel(init::MPO, final::MPO; nkraus::Union{Nothing,Int}=nothing, silent=true)
     sites = firstsiteinds(init)
 
+    # Combine loose links on first and last sites
     rhocomb, rholinkcomb = combineoutsidelinks(init)
     trunccomb, trunclinkcomb = combineoutsidelinks(final)
 
@@ -141,8 +143,9 @@ function runtruncationapprox(params::TruncParams)::TruncResults
     # Generate random density
     nallsites = nsites + 2 * nsitesreduce
     allsites = siteinds("Qubit", nallsites)
-    psi = normalize(randomMPS(ComplexF64, allsites, linkdims=bonddim))
+    psi = randomMPS(ComplexF64, allsites, linkdims=bonddim)
     fullrho = density_matrix(psi)
+    fullrho /= tr(fullrho) # normalize density
 
     # Reduce outside sites, keeping only nsites
     siterange = centerrange(nallsites, nsites)
@@ -164,7 +167,7 @@ function runtruncationapprox(params::TruncParams)::TruncResults
     trunc = truncate(rhoslice; maxdim=truncatedbonddim, site_range=truncrange)
 
     # Find approximate quantum channel
-    K, optloss, initloss = approxqcmpo(rhoslice, trunc; nkraus)
+    K, optloss, initloss = approxquantumchannel(rhoslice, trunc; nkraus)
 
     return TruncResults(;
         rho=rhoslice,
