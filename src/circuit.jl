@@ -87,12 +87,6 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
         # Now apply the gates to the wavefunction (alternate odd and even) 
         Threads.@threads for u in unitary_gates
             ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
-
-            # if disentangler_channel
-            #     ρ = @profile apply_twosite_gate_approximate_truncation(ρ, u, maxdim; nkraus=nkraus)
-            # else
-            #     ρ = apply_twosite_gate(ρ, u, maxdim=maxdim)
-            # end
         end
 
         # Make the noise gates for this layer 

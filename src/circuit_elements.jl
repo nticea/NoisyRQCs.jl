@@ -142,7 +142,7 @@ function apply_twosite_gate_multithread(ρ::Union{MPO,MPS}, G::ITensor; maxdim=n
     c1, c2 = c
 
     # Orthogonalize the MPS around this site 
-    orthogonalize!(ρ, c1)
+    #orthogonalize!(ρ, c1)
 
     # Apply the gate 
     if typeof(ρ) == ITensors.MPO

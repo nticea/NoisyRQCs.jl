@@ -8,7 +8,7 @@ struct Results
     L::Int
     T::Int
     ε::Real
-    maxdim::Int
+    maxdim::Union{Int,Nothing}
     max_inner_dim::Union{Int,Nothing}
     state_entropy::Vector{Float64}
     operator_entanglement::Matrix{Float64}

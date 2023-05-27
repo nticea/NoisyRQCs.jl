@@ -84,7 +84,7 @@ for (i, ε) in enumerate(εs)
             # mutual information
             mutual_info = average_elems(mutual_infos)
             toplot = mutual_info[:, 2:end]
-            push!(hmaps, heatmap(toplot, xticks=collect(1:L), xlabel="Distance (sites)", ylabel="Time", title="ε=$ε, max inner dim=$max_inner_dim", clims=(0, 1)))
+            push!(hmaps, heatmap(toplot, xticks=collect(1:L), xlabel="Distance (sites)", ylabel="Time", title="ε=$ε, max inner dim=$max_inner_dim"))
         end
 
     end
@@ -93,8 +93,8 @@ end
 
 # make superplots
 bigplot1 = plot(p1, p2, p3, p4, layout=Plots.grid(2, 2, widths=[1 / 2, 1 / 2]), size=(1250, 1000))
-bigplot2 = plot(hmaps[1:end-4]..., layout=Plots.grid(3, 3, widths=[1 / 3, 1 / 3, 1 / 3]), size=(2000, 1500))
+bigplot2 = plot(hmaps..., layout=Plots.grid(3, 3, widths=[1 / 3, 1 / 3, 1 / 3]), size=(2000, 1500))
 
 # save 
-savefig(bigplot1, "entanglement_mpdo_L$L.png")
-savefig(bigplot2, "mutual_info_mpdo_L$L.png")
+# savefig(bigplot1, "entanglement_mpdo_L$L.png")
+# savefig(bigplot2, "mutual_info_mpdo_L$L.png")
