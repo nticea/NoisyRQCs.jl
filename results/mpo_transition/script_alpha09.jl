@@ -9,7 +9,7 @@ ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
 α = 0.9
-Ls = [9]#[15, 17, 19]
+Ls = [13, 15, 17, 19]
 T = 20
 mdim = nothing
 normalize_ρ = true
@@ -41,6 +41,4 @@ function mpo_circuit_run(; α, Ls, T, maxdim, normalize_ρ::Bool=true)
 end
 
 # actually run the script 
-for _ in 1:10
-    mpo_circuit_run(α=α, Ls=Ls, T=T, maxdim=mdim, normalize_ρ=normalize_ρ)
-end
+mpo_circuit_run(α=α, Ls=Ls, T=T, maxdim=mdim, normalize_ρ=normalize_ρ)

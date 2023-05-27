@@ -129,7 +129,7 @@ end
 
 function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
     max_inner_dim::Union{Nothing,Int}=nothing, random_type::String="Haar",
-    ε::Real=0, benchmark::Bool=false, normalize_ρ::Bool=false)
+    ε::Real=0, benchmark::Bool=false, normalize_ρ::Bool=false, multithread::Bool=false)
 
     # Housekeeping 
     L = length(ψ)
@@ -215,16 +215,20 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         # At each time point, make a layer of random unitary gates 
         unitary_gates = unitary_layer(sites, t, random_type)
 
-        # Now apply the gates to the wavefunction (alternate odd and even) 
-        #ψnew = copy(ψ)
-        for u in unitary_gates
-            ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
-            # ρL, ρR, cL, cR = apply_twosite_gate_multithread(ψ, u, maxdim=maxdim)
-            # @show cL, cR
-            # ψnew[cL] = ρL
-            # ψnew[cR] = ρR
+        if multithread
+            ψnew = copy(ψ)
+            Threads.@threads for u in unitary_gates
+                ρL, ρR, cL, cR = apply_twosite_gate_multithread(ψ, u, maxdim=maxdim)
+                ψnew[cL] = ρL
+                ψnew[cR] = ρR
+            end
+            ψ = copy(ψnew)
+
+        else
+            for u in unitary_gates
+                ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
+            end
         end
-        #ψ = copy(ψnew)
 
         # Apply the noise layer 
         ψ = apply_noise_mpdo(ψ, Ks, inner_dim=max_inner_dim)
