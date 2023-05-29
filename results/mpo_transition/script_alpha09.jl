@@ -9,7 +9,7 @@ ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
 α = 0.9
-Ls = [13, 15, 17, 19]
+Ls = [15]
 T = 20
 mdim = nothing
 normalize_ρ = true
@@ -25,7 +25,7 @@ function mpo_circuit_run(; α, Ls, T, maxdim, normalize_ρ::Bool=true)
         ε = α / L
 
         @show ε
-        # Apply the MPDO circuit
+        # Apply the MPO circuit
         ψ, state_entanglement, operator_entanglement, logneg, MI, trace = @time apply_circuit(ψ0, T, ε=ε, maxdim=maxdim,
             benchmark=true, normalize_ρ=normalize_ρ)
 
