@@ -34,9 +34,6 @@ function mpdo_circuit_run(; α, Ls, T, maxdim, max_inner_dims, normalize_ρ::Boo
             ψ, state_entanglement, operator_entanglement, logneg, MI, trace = @time apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim,
                 max_inner_dim=max_inner_dim, benchmark=true, normalize_ρ=normalize_ρ, multithread=multithread)
 
-            # print results
-            flush(stdout)
-
             # make a results struct and save it 
             results = Results(L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, logneg, MI)
             timestamp = Dates.format(now(), "yyyy-mm-dd_HH:MM:SS")
