@@ -1,99 +1,108 @@
 ## IMPORTS ##
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
+include("../src/MPDO.jl")
 include("../src/circuit.jl")
 include("../src/results.jl")
-using Random
 
 ITensors.set_warn_order(50)
-Random.seed!(123456)
 
 ## PARAMETERS ## 
 L = 9
-T = 4
-maxdims = nothing
-random_type = "Haar"
+T = 20
+ε = 1e-3
+maxdim_mpdo = 4
+max_inner_dim = 4
+normalize_ρ = true
+benchmark = true
 
-# Initialize the wavefunction to product state (all 0)
+niter = 3
+
+# Initialize the state 
 ψ0 = initialize_wavefunction(L=L)
-sites = siteinds(ψ0)
 
-# Make the density matrix 
-global ρ = density_matrix(copy(ψ0))
+state_entanglement_mpdo = zeros(niter, T)
+operator_entanglement_mpdo = zeros(niter, T)
+logneg_mpdo = zeros(niter, T)
+MI_mpdo = zeros(niter, T)
+trace_mpdo = zeros(niter, T)
 
-function my_svd(A::ITensor, Linds...)
+state_entanglement_mpo = zeros(niter, T)
+operator_entanglement_mpo = zeros(niter, T)
+logneg_mpo = zeros(niter, T)
+MI_mpo = zeros(niter, T)
+trace_mpo = zeros(niter, T)
 
-    # Keyword argument deprecations
-    #if haskey(kwargs, :utags) || haskey(kwargs, :vtags)
-    #  @warn "Keyword arguments `utags` and `vtags` are deprecated in favor of `leftags` and `righttags`."
-    #end
+state_entanglement_true = zeros(niter, T)
+operator_entanglement_true = zeros(niter, T)
+logneg_true = zeros(niter, T)
+MI_true = zeros(niter, T)
+trace_true = zeros(niter, T)
 
-    Lis = commoninds(A, Linds)
-    Ris = uniqueinds(A, Lis)
+for i in 1:niter
 
-    CL = combiner(Lis...)
-    CR = combiner(Ris...)
+    # Apply the MPDO circuit
+    ψ, st_ent, op_ent, logneg, mutual_info, trace = @time apply_circuit_mpdo(ψ0, T, ε=ε, maxdim=maxdim_mpdo,
+        max_inner_dim=max_inner_dim, benchmark=benchmark, normalize_ρ=normalize_ρ)
 
-    AC = A * CR * CL
+    state_entanglement_mpdo[i, :] = st_ent
+    operator_entanglement_mpdo[i, :] = op_ent[:, floor(Int, L / 2)]
+    logneg_mpdo[i, :] = logneg
+    #MI_mpdo[i, :] = mutual_info
+    trace_mpdo[i, :] = trace
 
-    cL = combinedind(CL)
-    cR = combinedind(CR)
+    #Also do the MPO circuit 
+    ρ, st_ent, op_ent, logneg, mutual_info, trace = @time apply_circuit(ψ0, T; random_type="Haar", ε=ε, benchmark=benchmark, maxdim=maxdim_mpdo^2)
 
-    @show inds(AC)
-    @show cL
-    @show cR
+    state_entanglement_mpo[i, :] = st_ent
+    operator_entanglement_mpo[i, :] = op_ent[:, floor(Int, L / 2)]
+    logneg_mpo[i, :] = logneg
+    #MI_mpo[i, :] = mutual_info
+    trace_mpo[i, :] = trace
 
-    if inds(AC) != (cL, cR)
-        AC = permute(AC, cL, cR)
-    end
+    ρ, st_ent, op_ent, logneg, mutual_info, trace = @time apply_circuit(ψ0, T; random_type="Haar", ε=ε, benchmark=benchmark, maxdim=nothing)
 
-    F = LinearAlgebra.svd(array(AC))
-    return F.S
+    state_entanglement_true[i, :] = st_ent
+    operator_entanglement_true[i, :] = op_ent[:, floor(Int, L / 2)]
+    logneg_true[i, :] = logneg
+    #MI_true[i, :] = mutual_info
+    trace_true[i, :] = trace
 end
 
-function my_svn(T::ITensor)
-    sites = tag_and_plev(T; tag="Site", lev=0)
-    S = my_svd(T, sites...)
-    SvN = 0.0
-    for p in S
-        if p != 0
-            SvN -= p * log(p)
-        end
-    end
-    return SvN
-end
+# do all averages 
+state_entanglement_mpdo = mean(state_entanglement_mpdo, dims=1)'
+operator_entanglement_mpdo = mean(operator_entanglement_mpdo, dims=1)'
+logneg_mpdo = mean(logneg_mpdo, dims=1)'
+MI_mpdo = mean(MI_mpdo, dims=1)'
+trace_mpdo = mean(trace_mpdo, dims=1)'
 
-for t in 1:2:T
-    A = 1
-    for B in collect(2:L)
-        @show A, B
+state_entanglement_mpo = mean(state_entanglement_mpo, dims=1)'
+operator_entanglement_mpo = mean(operator_entanglement_mpo, dims=1)'
+logneg_mpo = mean(logneg_mpo, dims=1)'
+MI_mpo = mean(MI_mpo, dims=1)'
+trace_mpo = mean(trace_mpo, dims=1)'
 
-        ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
+state_entanglement_true = mean(state_entanglement_true, dims=1)'
+operator_entanglement_true = mean(operator_entanglement_true, dims=1)'
+logneg_true = mean(logneg_true, dims=1)'
+MI_true = mean(MI_true, dims=1)'
+trace_true = mean(trace_true, dims=1)'
 
-        SA = my_svn(ρA)
-        SB = my_svn(ρB)
-        SAB = my_svn(ρAB)
-        MI = SA + SB - SAB
+# Plot things to compare 
+p1 = plot(1:T, state_entanglement_mpdo, title="State entanglement", label="mpdo")
+p1 = plot!(p1, 1:T, state_entanglement_mpo, title="State entanglement", label="mpo (truncated)")
+p1 = plot!(p1, 1:T, state_entanglement_true, title="State entanglement", label="mpo (true)")
 
-        @show SA, SB, SAB
-        @show MI
+p2 = plot(1:T, operator_entanglement_mpdo, title="Operator entanglement", label="mpdo")
+p2 = plot!(p2, 1:T, operator_entanglement_mpo, title="Operator entanglement", label="mpo (truncated)")
+p2 = plot!(p2, 1:T, operator_entanglement_true, title="Operator entanglement", label="mpo (true)")
 
-        # ρA = permute_to_svd_form(ρA)
-        # ρB = permute_to_svd_form(ρB)
-        # ρAB = permute_to_svd_form(ρAB)
+p3 = plot(1:T, trace_mpdo, title="Trace", label="mpdo")
+p3 = plot!(p3, 1:T, trace_mpo, title="Trace", label="mpo (truncated)")
+p3 = plot!(p3, 1:T, trace_true, title="Trace", label="mpo (true)")
 
-        # @show array(ρA)
-        # @show array(ρB)
-        # @show array(ρAB)
-    end
+p4 = plot(1:T, logneg_mpdo, title="Logarithmic negativity", label="mpdo")
+p4 = plot!(p4, 1:T, logneg_mpo, title="Logarithmic negativity", label="mpo (truncated)")
+p4 = plot!(p4, 1:T, logneg_true, title="Logarithmic negativity", label="mpo (true)")
 
-    # At each time point, make a layer of random unitary gates 
-    unitary_gates = unitary_layer(sites, t, random_type)
-
-    # Now apply the gates to the wavefunction (alternate odd and even) 
-    # for u in unitary_gates
-    #     global ρ = apply_twosite_gate(ρ, u, maxdim=maxdims)
-    # end
-    global ρ = apply_twosite_gate(ρ, unitary_gates[1], maxdim=maxdims)
-    global ρ = apply_twosite_gate(ρ, unitary_gates[2], maxdim=maxdims)
-end
+p = plot(p1, p2, p3, p4, layout=Plots.grid(2, 2, widths=[1 / 2, 1 / 2]), size=(1250, 1000))

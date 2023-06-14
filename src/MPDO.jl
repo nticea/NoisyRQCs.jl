@@ -106,7 +106,7 @@ function apply_noise_mpdo(ψ::MPS, Ks; inner_dim::Union{Int,Nothing}=2)
     ψ̃ = copy(ψ)
     sites = physical_indices(ψ)
 
-    Threads.@threads for j in 1:length(ψ)
+    for j in 1:length(ψ)
         K = copy(Ks[j])
         T = copy(ψ[j])
         T = prime(T, sites[j])
@@ -201,7 +201,7 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
 
             # mutual information 
             A = 1
-            Threads.@threads for B in collect(2:L)
+            for B in collect(2:L)
                 ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
 
                 # Compute the mutual information 
@@ -215,20 +215,24 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         # At each time point, make a layer of random unitary gates 
         unitary_gates = unitary_layer(sites, t, random_type)
 
-        if multithread
-            ψnew = copy(ψ)
-            Threads.@threads for u in unitary_gates
-                ρL, ρR, cL, cR = apply_twosite_gate_multithread(ψ, u, maxdim=maxdim)
-                ψnew[cL] = ρL
-                ψnew[cR] = ρR
-            end
-            ψ = copy(ψnew)
-
-        else
-            for u in unitary_gates
-                ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
-            end
+        for u in unitary_gates
+            ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
         end
+
+        # if multithread
+        #     ψnew = copy(ψ)
+        #     Threads.@threads for u in unitary_gates
+        #         ρL, ρR, cL, cR = apply_twosite_gate_multithread(ψ, u, maxdim=maxdim)
+        #         ψnew[cL] = ρL
+        #         ψnew[cR] = ρR
+        #     end
+        #     ψ = copy(ψnew)
+
+        # else
+        #     for u in unitary_gates
+        #         ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
+        #     end
+        # end
 
         # Apply the noise layer 
         ψ = apply_noise_mpdo(ψ, Ks, inner_dim=max_inner_dim)

@@ -8,10 +8,10 @@ ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
 L = 9
-T = 100
-εs = [0]
-maxdim = 16
-max_inner_dims = [14,16]
+T = 20
+εs = [0, 1e-2, 1e-3]
+maxdim = 14
+max_inner_dims = [4, 8, 12, 16]
 normalize_ρ = true
 
 function mpdo_circuit_run(; L, T, maxdim, εs, max_inner_dims, normalize_ρ::Bool=true)
