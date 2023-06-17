@@ -10,9 +10,9 @@ ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
 α = nothing #0.9
-Ls = [11]
+Ls = [11]#[11]
 T = 20
-max_outer_dims = [30]
+max_outer_dims = [30]#[30]
 max_inner_dims = [50, 58, 64]
 normalize_ρ = true
 multithread = false
@@ -79,5 +79,6 @@ end
 # actually run the script 
 for max_outer_dim in max_outer_dims
     mpdo_circuit_run(α=α, Ls=Ls, T=T, max_outer_dim=max_outer_dim, max_inner_dims=max_inner_dims, normalize_ρ=normalize_ρ, multithread=multithread)
-    mpo_circuit_run(α=α, Ls=Ls, T=T, max_outer_dims=max_outer_dims, normalize_ρ=normalize_ρ)
 end
+
+mpo_circuit_run(α=α, Ls=Ls, T=T, max_outer_dims=max_outer_dims, normalize_ρ=normalize_ρ)

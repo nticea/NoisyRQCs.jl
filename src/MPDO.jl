@@ -219,6 +219,8 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
         end
 
+        @show Base.summarysize(ψ)
+
         # if multithread
         #     ψnew = copy(ψ)
         #     Threads.@threads for u in unitary_gates
