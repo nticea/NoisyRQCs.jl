@@ -47,9 +47,6 @@ function mpo_circuit_run(; ε, α, L, T, max_outer_dim, normalize_ρ::Bool=true)
     ψ, state_entanglement, operator_entanglement, logneg, MI, trace = @time apply_circuit(ψ0, T, ε=ε, maxdim=max_outer_dim^2,
         benchmark=true, normalize_ρ=normalize_ρ)
 
-    # print results
-    flush(stdout)
-
     # make a results struct and save it 
     results = Results(L, T, ε, maxlinkdim(ψ), 0, state_entanglement, operator_entanglement, trace, logneg, MI)
     timestamp = Dates.format(now(), "yyyy-mm-dd_HH:MM:SS")

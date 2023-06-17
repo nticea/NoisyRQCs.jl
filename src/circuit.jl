@@ -41,8 +41,8 @@ function apply_circuit(ψ0::MPS, T::Int; random_type="Haar", ε=0,
 
     # Iterate over all time steps 
     for t in 1:T
-        print(t, "-")
         # print results
+        print(t, "-")
         flush(stdout)
 
         # benchmarking 

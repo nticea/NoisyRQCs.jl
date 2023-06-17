@@ -166,7 +166,9 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
     end
 
     for t in 1:T
+        # print results
         print(t, "-")
+        flush(stdout)
 
         # benchmarking 
         if benchmark
