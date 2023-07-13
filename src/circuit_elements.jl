@@ -6,6 +6,7 @@ using Profile
 
 include("utilities.jl")
 include("approxchannel.jl")
+include("results.jl")
 
 """
 This function generates a Haar random unitary of dimension DxD

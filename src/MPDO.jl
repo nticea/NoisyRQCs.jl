@@ -3,6 +3,7 @@ using LinearAlgebra
 
 include("circuit_elements.jl")
 include("utilities.jl")
+include("results.jl")
 
 """
 Some notes about MPDOs from https://arxiv.org/pdf/1804.09796.pdf 
@@ -127,45 +128,27 @@ function apply_noise_mpdo(ψ::MPS, Ks; inner_dim::Union{Int,Nothing}=2)
     return ψ̃
 end
 
-function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
-    max_inner_dim::Union{Nothing,Int}=nothing, random_type::String="Haar",
-    ε::Real=0, benchmark::Bool=false, normalize_ρ::Bool=false, multithread::Bool=false)
+function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::Union{String,Nothing}=nothing, random_type::String="Haar", benchmark::Bool=false, normalize_ρ::Bool=false)
 
-    # Housekeeping 
-    L = length(ψ)
+    # extract the results from the checkpointed path
+    results = load_results(checkpoint_path, load_MPS=true)
+    ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs = splat_struct(results)
+    T0 = findfirst(x -> x == 0, trace) # this is how far we've simulated already 
+
+    # prepare the noise gates 
     sites = siteinds(ψ)
-    if isnothing(maxdim)
-        println("No truncation")
-        maxdim = 2^((L - 1) / 2) # accounts for the fact that the MPDO bonds are doubled relative to the MPS bonds  
-    else
-        println("Truncating at m=$(maxdim)")
-        if !isnothing(max_inner_dim)
-            @assert max_inner_dim <= 2 * maxdim^2
-        end
-    end
-
-    # Make the noise gates for this layer 
     Ks = make_kraus_operators(sites, ε)
 
-    # For benchmarking 
-    if benchmark
-        state_entanglement = zeros(Float64, T)
-        operator_entanglement = zeros(Float64, T, L - 3)
-        trace = zeros(Float64, T)
-        lognegs = zeros(Float64, T)
-        MIs = zeros(Float64, T, L)
+    # if we've already evolved this wavefunction all the way through, do nothing 
+    if isnothing(T0)
+        if benchmark
+            return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
+        end
+
+        return ψ
     end
 
-    ## Transform ψ into an MPDO ##
-    # Take the input state and add a dummy index (for now just dim=1) 
-    for m in 1:length(ψ)
-        M = ψ[m]
-        new_inds = [inds(M)..., Index(1, "Inner,n=$(m)")]
-        new_arr = reshape(array(M), size(M)..., 1)
-        ψ[m] = ITensor(new_arr, new_inds)
-    end
-
-    for t in 1:T
+    for t in T0:T
         # print results
         print(t, "-")
         flush(stdout)
@@ -177,10 +160,7 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
 
             # trace
             trace[t] = real(tr(ρ))
-            @show trace[t]
-
-            # The maximum link dimension
-            @show maxlinkdim(ρ)
+            @show trace[t], maxlinkdim(ρ)
 
             # Calculate the second Renyi entropy (state entanglement)
             ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L / 2)))
@@ -210,6 +190,15 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
                 MIs[t, B] = mutual_information(ρA, ρB, ρAB)
             end
 
+            # update the results 
+            if !isnothing(save_path)
+                results = Results(0, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
+                save_structs(results, save_path)
+            end
+
+        else
+            # still need to keep track of the trace somehow 
+            trace[t] = -1
         end
 
         ## Apply a layer of unitary evolution to the MPS ##
@@ -221,7 +210,126 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
         end
 
-        @show Base.summarysize(ψ)
+        # Apply the noise layer 
+        ψ = apply_noise_mpdo(ψ, Ks, inner_dim=max_inner_dim)
+
+        # save results
+        if !isnothing(checkpoint_path)
+            results = Results(ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
+            save_structs(results, checkpoint_path)
+        end
+    end
+
+    if benchmark
+        return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
+    end
+
+    return ψ
+end
+
+function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
+    max_inner_dim::Union{Nothing,Int}=nothing, random_type::String="Haar",
+    ε::Real=0, benchmark::Bool=false, normalize_ρ::Bool=false,
+    checkpoint_path::Union{String,Nothing}, save_path::Union{String,Nothing})
+
+    # check whether there exists a checkpointed MPDO
+    if checkpointed(checkpoint_path)
+        return apply_circuit_mpdo_checkpointed(checkpoint_path=checkpoint_path, save_path=save_path, random_type=random_type, benchmark=benchmark, normalize_ρ=normalize_ρ)
+    end
+
+    # Housekeeping 
+    L = length(ψ)
+    sites = siteinds(ψ)
+    if isnothing(maxdim)
+        println("No truncation")
+        maxdim = 2^((L - 1) / 2) # accounts for the fact that the MPDO bonds are doubled relative to the MPS bonds  
+    else
+        println("Truncating at m=$(maxdim)")
+        if !isnothing(max_inner_dim)
+            @assert max_inner_dim <= 2 * maxdim^2
+        end
+    end
+
+    # Make the noise gates for this layer 
+    Ks = make_kraus_operators(sites, ε)
+
+    # For benchmarking 
+    state_entanglement = zeros(Float64, T)
+    operator_entanglement = zeros(Float64, T, L - 3)
+    trace = zeros(Float64, T)
+    lognegs = zeros(Float64, T)
+    MIs = zeros(Float64, T, L)
+
+    ## Transform ψ into an MPDO ##
+    # Take the input state and add a dummy index (for now just dim=1) 
+    for m in 1:length(ψ)
+        M = ψ[m]
+        new_inds = [inds(M)..., Index(1, "Inner,n=$(m)")]
+        new_arr = reshape(array(M), size(M)..., 1)
+        ψ[m] = ITensor(new_arr, new_inds)
+    end
+
+    for t in 1:T
+        # print results
+        print(t, "-")
+        flush(stdout)
+
+        # benchmarking 
+        if benchmark
+            # Convert MPDO into density matrix 
+            ρ = density_matrix_mpdo(ψ)
+
+            # trace
+            trace[t] = real(tr(ρ))
+            @show trace[t], maxlinkdim(ρ)
+
+            # Calculate the second Renyi entropy (state entanglement)
+            ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L / 2)))
+            SR2 = second_Renyi_entropy(ρ_A)
+            state_entanglement[t] = real(SR2)
+            if normalize_ρ
+                state_entanglement[t] *= trace[t]
+            end
+
+            # Calculate the operator entropy
+            Ψ = combine_indices(ρ)
+            SvN = []
+            for b in 2:(L-2)
+                push!(SvN, entanglement_entropy(Ψ, b=b))
+            end
+            operator_entanglement[t, :] = SvN
+
+            # Compute the logarithmic negativity
+            lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
+
+            # mutual information 
+            A = 1
+            for B in collect(2:L)
+                ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
+
+                # Compute the mutual information 
+                MIs[t, B] = mutual_information(ρA, ρB, ρAB)
+            end
+
+            # update the results 
+            if !isnothing(save_path)
+                results = Results(0, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
+                save_structs(results, save_path)
+            end
+
+        else
+            # still need to keep track of the trace somehow 
+            trace[t] = -1
+        end
+
+        ## Apply a layer of unitary evolution to the MPS ##
+
+        # At each time point, make a layer of random unitary gates 
+        unitary_gates = unitary_layer(sites, t, random_type)
+
+        for u in unitary_gates
+            ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
+        end
 
         # if multithread
         #     ψnew = copy(ψ)
@@ -241,6 +349,11 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         # Apply the noise layer 
         ψ = apply_noise_mpdo(ψ, Ks, inner_dim=max_inner_dim)
 
+        # save results
+        if !isnothing(checkpoint_path)
+            results = Results(ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
+            save_structs(results, checkpoint_path)
+        end
     end
 
     if benchmark

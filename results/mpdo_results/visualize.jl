@@ -1,21 +1,22 @@
-
 ## IMPORTS ##
 using Pkg
 Pkg.activate(joinpath(@__DIR__, "../.."))
 include("../../src/circuit.jl")
 include("../../src/utilities.jl")
 include("../../src/results.jl")
-using StatsBase
+using StatsBase, StatsPlots, DataFrames
 ITensors.set_warn_order(50)
 
-# get all loadpaths with system size L 
-L = 11
-εs, max_inner_dims, maxdims, results = [], [], [], []
+## THIS IS THE ONLY INPUT PARAMETER ## 
+L = 9
 
-files = readdir(joinpath(@__DIR__, "data"))
+## SCRIPT ## 
+datapath = joinpath(@__DIR__, "data")
+εs, max_inner_dims, maxdims, results = [], [], [], []
+files = readdir(datapath)
 for f in files
-    if startswith(f, "results_$(L)Nx")
-        res = load_results(joinpath(@__DIR__, "data", f))
+    if startswith(f, "results_$(L)L")
+        res = load_results(joinpath(datapath, f))
         _, L̃, T, ε, maxdim, max_inner_dim, st_ent, op_ent, trace, logneg, mutual_info = splat_struct(res)
         @assert L̃ == L
         map(push!, [εs, max_inner_dims, maxdims, results], [ε, max_inner_dim, maxdim, res])
@@ -104,16 +105,14 @@ bigplot1 = plot(p1, p2, p3, p4, layout=Plots.grid(2, 2, widths=[1 / 2, 1 / 2]), 
 bigplot2 = plot(hmaps..., layout=Plots.grid(4, 3, widths=[1 / 3, 1 / 3, 1 / 3]), size=(2000, 1500))
 
 # Performance
-perf_savepath = joinpath(savedir, "performance_L$L.csv")
-df_performance = load_performance_dataframe(perf_savepath)
+benchmarkpath = joinpath(datapath, "performance_L$L.csv")
+df_performance = load_performance_dataframe(benchmarkpath)
 
 perf1 = @df df_performance plot(
     :max_outer_dim,
     :bytes,
     group=:max_inner_dim,
     m=(0.75, [:+ :h :star7 :circle], 5),
-    # label=["MPO","κ=32","κ=40","κ=50"]
-    # xaxis=:log10, yaxis=:log10,
 )
 title!("Memory usage")
 xlabel!("Max outer dimension")
@@ -124,8 +123,6 @@ perf2 = @df df_performance plot(
     :time,
     group=:max_inner_dim,
     m=(0.75, [:+ :h :star7 :circle], 5),
-    # label=["MPO","κ=32","κ=40","κ=50"]
-    # xaxis=:log10, yaxis=:log10,
 )
 title!("Runtime")
 xlabel!("Max outer dimension")
@@ -133,7 +130,7 @@ ylabel!("Time")
 
 bigplot3 = plot(perf1, perf2, layout=Plots.grid(1, 2, widths=[1 / 2, 1 / 2]), size=(1250, 1000))
 
-
-# # save 
-# savefig(bigplot1, "entanglement_mpdo_L$L.png")
-# savefig(bigplot2, "mutual_info_mpdo_L$L.png")
+## SAVING INFO ## 
+# savefig(bigplot1, "entanglement_$(L)L.png")
+# savefig(bigplot2, "mutual_info_$(L)L.png")
+# savefig(bigplot3, "performance_$(L)L.png")

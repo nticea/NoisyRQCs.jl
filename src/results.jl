@@ -3,13 +3,15 @@ using Plots
 using StatsBase
 using CurveFit
 using ITensors.HDF5
+using DataFrames, CSV
 
 struct Results
+    ρ::Union{MPO,MPS,Real} # setting ρ=0 is just saying it's not there 
     L::Int
     T::Int
     ε::Real
-    maxdim::Union{Int,Nothing}
-    max_inner_dim::Union{Int,Nothing}
+    maxdim::Int
+    max_inner_dim::Int
     state_entropy::Vector{Float64}
     operator_entanglement::Matrix{Float64}
     trace::Vector{Float64}
@@ -196,4 +198,33 @@ function probability_distribution(m::MPS)
         end
     end
     return probs
+end
+
+function update_performance!(df::DataFrame; L, ε, max_outer_dim, max_inner_dim, results)
+    time, bytes, gctime, gcstats = results.time, results.bytes, results.gctime, results.gcstats
+
+    if isnothing(max_outer_dim)
+        max_outer_dim = (2^(floor(Int, L / 2)))^2
+    end
+
+    if isnothing(max_inner_dim)
+        max_inner_dim = 0
+    end
+
+    df2 = DataFrame(L=[L], ε=[ε], max_outer_dim=[max_outer_dim],
+        max_inner_dim=[max_inner_dim], time=[time], bytes=[bytes],
+        gctime=[gctime])
+
+    append!(df, df2)
+end
+
+function load_performance_dataframe(path)
+    try # try loading the DataFrames
+        df = DataFrame(CSV.File(path))
+        return df
+    catch error_reading_dataframe # if the file does not exist, create a new dataframe
+        @show error_reading_dataframe
+        return DataFrame(L=Int64[], ε=Float64[], max_outer_dim=Int64[], max_inner_dim=Int64[],
+            time=Float64[], bytes=Float64[], gctime=Float64[])
+    end
 end

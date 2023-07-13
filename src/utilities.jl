@@ -350,6 +350,37 @@ end
 #     return true
 # end
 
+function checkpointed(path::Union{String,Nothing})
+    if isnothing(path)
+        return false
+    end
+
+    # check if the file exists 
+    if !isfile(path)
+        return false
+    end
+
+    # else, try to load the ITensor 
+    res = load_results(path) # this is without ρ or ψ
+    try
+        if res.max_inner_dim == 0
+            res_full = load_results(path, load_MPO=true)
+            if typeof(res_full.ρ) == MPO
+                return true
+            end
+        else
+            res_full = load_results(path, load_MPS=true)
+            if typeof(res_full.ρ) == MPS
+                return true
+            end
+        end
+    catch loading_ρ_error
+        @show loading_ρ_error
+    end
+
+    return false
+end
+
 function splat_struct(struc)
     function Name(arg)
         string(arg)
@@ -357,7 +388,6 @@ function splat_struct(struc)
     fnames = fieldnames(typeof(struc))
     vec = []
     for fn in fnames
-        n = Name(fn)
         push!(vec, getfield(struc, fn))
     end
     return vec
@@ -390,9 +420,17 @@ function save_structs(struc, path::String)
     end
 end
 
-function load_results(loadpath::String)
+function load_results(loadpath::String; load_MPO::Bool=false, load_MPS::Bool=false)
     f = h5open(loadpath, "r")
+    if load_MPO
+        ρ = read(f, "ρ", MPO)
+    elseif load_MPS
+        ρ = read(f, "ρ", MPS)
+    else
+        ρ = 0
+    end
     d = read(f)
-    return Results(d["L"], d["T"], d["ε"], d["maxdim"], d["max_inner_dim"], d["state_entropy"],
+    close(f)
+    return Results(ρ, d["L"], d["T"], d["ε"], d["maxdim"], d["max_inner_dim"], d["state_entropy"],
         d["operator_entanglement"], d["trace"], d["logarithmic_negativity"], d["mutual_information"])
 end

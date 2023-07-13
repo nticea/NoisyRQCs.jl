@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 ADNLPModels = "54578032-b7ea-4c30-94aa-7cbd1cce6c9a"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 Convex = "f65535da-76fb-5f13-bab9-19810c17039a"
 CurveFit = "5a033b19-8c74-5913-a970-47c3779ef25c"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
