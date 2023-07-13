@@ -7,12 +7,10 @@ include("../../src/results.jl")
 ITensors.set_warn_order(50)
 
 ## PARAMETERS ## 
-# must all be passed in by the queue_jobs function call!! 
-L = 9
-T = 20
-ε = 1e-5
-χ = 14 # the full maxdim is χ SQUARED !! don't screw this up 
-replica = 1
+args = parse.(Float64, ARGS)
+@assert length(args) == 6
+L, T, ε, χ, κ, replica = [args[n] for n in 1:length(args)]
+L, T, χ, κ, replica = Int(L), Int(T), Int(χ), Int(κ), Int(replica)
 
 stamp = "results_$(L)L_$(ε)ε_$(χ)max_outer_dim_$(0)max_inner_dim_$(replica)replica.h5"
 
