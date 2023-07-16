@@ -7,7 +7,7 @@ struct RunParams
     replica::Int
 end
 
-function submit_job(params::RunParams, filepath, dirpath, job_prefix; nodes=1, ntasks=1, cpus_per_task=8, mem=256, partition=partition = "owners,normal")
+function submit_job(params::RunParams, filepath, dirpath, job_prefix; nodes=1, ntasks=1, cpus_per_task=8, mem=256, partition=partition = "owners,simes")
     outpath = joinpath(dirpath, "out")
     slurmpath = joinpath(dirpath, "slurmfiles")
     mkpath(outpath)
