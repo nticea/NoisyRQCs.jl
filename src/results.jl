@@ -223,7 +223,7 @@ function load_performance_dataframe(path)
         df = DataFrame(CSV.File(path))
         return df
     catch error_reading_dataframe # if the file does not exist, create a new dataframe
-        @show error_reading_dataframe
+        #@show error_reading_dataframe
         return DataFrame(L=Int64[], ε=Float64[], max_outer_dim=Int64[], max_inner_dim=Int64[],
             time=Float64[], bytes=Float64[], gctime=Float64[])
     end

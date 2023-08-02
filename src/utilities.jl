@@ -272,7 +272,8 @@ end
 
 function combine_indices(ρ::MPO)
     ρ = copy(ρ)
-    orthogonalize!(ρ, 1)
+    println("Orthogonalizing??")
+    @time orthogonalize!(ρ, 1)
     # Combine the primed and unprimed indices at each site to create a super MPS
     sites = siteinds(ρ)
     for i in 1:length(ρ)

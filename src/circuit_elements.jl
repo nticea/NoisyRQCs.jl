@@ -117,7 +117,6 @@ function apply_twosite_gate(ρ::Union{MPO,MPS}, G::ITensor; maxdim=nothing)
     # SVD the resulting tensor 
     inds3 = uniqueinds(ρ[c1], ρ[c2])
 
-
     if isnothing(maxdim) # If maxdim is nothing, then implement no truncation cutoff
         U, S, V = ITensors.svd(wf, inds3, cutoff=0, lefttags="Link,l=$(c1)", righttags="Link,l=$(c2)")
     else

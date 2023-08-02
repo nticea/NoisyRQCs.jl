@@ -4,11 +4,11 @@ Pkg.activate(joinpath(@__DIR__, "../../"))
 include("../../src/submit_job.jl")
 
 nreps = 5 # number of replicas 
-L = 13
+L = 19
 T = 20
-ε = 1e-4
-χs = [30, 45, 55, 64]
-κs = [0, 1, 2, 4] # 0 is just the MPO, so it is exact
+ε = 1e-3
+χs = [512]
+κs = [1, 2, 4, 8] # 0 is just the MPO, so it is exact
 
 filepath_MPO = joinpath(@__DIR__, "collect_data_mpo.jl")
 filepath_MPDO = joinpath(@__DIR__, "collect_data_mpdo.jl")

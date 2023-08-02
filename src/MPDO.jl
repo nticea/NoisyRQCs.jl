@@ -128,7 +128,7 @@ function apply_noise_mpdo(ψ::MPS, Ks; inner_dim::Union{Int,Nothing}=2)
     return ψ̃
 end
 
-function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::Union{String,Nothing}=nothing, random_type::String="Haar", benchmark::Bool=false, normalize_ρ::Bool=false)
+function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::Union{String,Nothing}=nothing, tensors_path::Union{String,Nothing}=nothing, random_type::String="Haar", benchmark::Bool=false, normalize_ρ::Bool=false)
 
     # extract the results from the checkpointed path
     results = load_results(checkpoint_path, load_MPS=true)
@@ -141,11 +141,7 @@ function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::U
 
     # if we've already evolved this wavefunction all the way through, do nothing 
     if isnothing(T0)
-        if benchmark
-            return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
-        end
-
-        return ψ
+        return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
     end
 
     for t in T0:T
@@ -197,8 +193,9 @@ function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::U
             end
 
         else
-            # still need to keep track of the trace somehow 
-            trace[t] = -1
+            # still need to keep track of the trace 
+            trace[t] = real(tr(ρ))
+            @show trace[t], maxlinkdim(ρ)
         end
 
         ## Apply a layer of unitary evolution to the MPS ##
@@ -218,23 +215,26 @@ function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::U
             results = Results(ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
             save_structs(results, checkpoint_path)
         end
+
+        if !isnothing(tensors_path)
+            tpath = joinpath(tensors_path, "_$(T)T.h5")
+            results = Results(ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
+            save_structs(results, tpath)
+        end
     end
 
-    if benchmark
-        return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
-    end
-
-    return ψ
+    return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
 end
 
 function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
     max_inner_dim::Union{Nothing,Int}=nothing, random_type::String="Haar",
     ε::Real=0, benchmark::Bool=false, normalize_ρ::Bool=false,
-    checkpoint_path::Union{String,Nothing}, save_path::Union{String,Nothing})
+    checkpoint_path::Union{String,Nothing}=nothing, save_path::Union{String,Nothing}=nothing,
+    tensors_path::Union{String,Nothing}=nothing)
 
     # check whether there exists a checkpointed MPDO
     if checkpointed(checkpoint_path)
-        return apply_circuit_mpdo_checkpointed(checkpoint_path=checkpoint_path, save_path=save_path, random_type=random_type, benchmark=benchmark, normalize_ρ=normalize_ρ)
+        return apply_circuit_mpdo_checkpointed(checkpoint_path=checkpoint_path, save_path=save_path, tensors_path=tensors_path, random_type=random_type, benchmark=benchmark, normalize_ρ=normalize_ρ)
     end
 
     # Housekeeping 
@@ -277,37 +277,51 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         # benchmarking 
         if benchmark
             # Convert MPDO into density matrix 
-            ρ = density_matrix_mpdo(ψ)
+            println("Making density matrix")
+            @time ρ = density_matrix_mpdo(ψ)
 
             # trace
-            trace[t] = real(tr(ρ))
+            println("Calculating trace")
+            @time trace[t] = real(tr(ρ))
             @show trace[t], maxlinkdim(ρ)
 
             # Calculate the second Renyi entropy (state entanglement)
-            ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L / 2)))
-            SR2 = second_Renyi_entropy(ρ_A)
+            println("Making reduced density matrix")
+            @time ρ_A = reduced_density_matrix(ρ, collect(1:floor(Int, L / 2)))
+
+            println("Calculating second renyi entropy")
+            @time SR2 = second_Renyi_entropy(ρ_A)
             state_entanglement[t] = real(SR2)
             if normalize_ρ
                 state_entanglement[t] *= trace[t]
             end
 
             # Calculate the operator entropy
-            Ψ = combine_indices(ρ)
-            SvN = []
-            for b in 2:(L-2)
-                push!(SvN, entanglement_entropy(Ψ, b=b))
-            end
-            operator_entanglement[t, :] = SvN
+            println("Combining indices")
+            @time Ψ = combine_indices(ρ)
+            SvN = entanglement_entropy(Ψ, b=floor(Int, L / 2))
+            operator_entanglement[t, floor(Int, L / 2)] = SvN
+
+            ## THIS IS A COSTLY OPERATION, SO DON'T COMPUTE FOR EVERY BOND
+            # SvN = []
+            # for b in 2:(L-2)
+            #     println("Computing entanglement entropy for bond $b")
+            #     @time push!(SvN, entanglement_entropy(Ψ, b=b))
+            # end
+            # operator_entanglement[t, :] = SvN
 
             # Compute the logarithmic negativity
-            lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
+            println("Calculating logarithmic negativity")
+            @time lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
 
             # mutual information 
             A = 1
             for B in collect(2:L)
-                ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
+                println("Making reduced density matrix with sites $A, $B")
+                @time ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
 
                 # Compute the mutual information 
+                println("Computing MI of sites $A, $B")
                 MIs[t, B] = mutual_information(ρA, ρB, ρAB)
             end
 
@@ -346,7 +360,7 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         #     end
         # end
 
-        # Apply the noise layer 
+        # Apply the noise layer
         ψ = apply_noise_mpdo(ψ, Ks, inner_dim=max_inner_dim)
 
         # save results
@@ -354,12 +368,15 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             results = Results(ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
             save_structs(results, checkpoint_path)
         end
+
+        if !isnothing(tensors_path)
+            tpath = joinpath(tensors_path, "state_$(t)T.h5")
+            println("Saving data at timestep $t at $tpath")
+            results = Results(ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
+            save_structs(results, tpath)
+        end
     end
 
-    if benchmark
-        return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
-    end
-
-    return ψ
+    return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
 
 end

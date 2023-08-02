@@ -8,7 +8,7 @@ using StatsBase, StatsPlots, DataFrames
 ITensors.set_warn_order(50)
 
 ## THIS IS THE ONLY INPUT PARAMETER ## 
-L = 9
+L = 11
 
 ## SCRIPT ## 
 datapath = joinpath(@__DIR__, "data")
@@ -93,7 +93,7 @@ for (i, ε) in enumerate(εs)
                 # mutual information
                 mutual_info = average_elems(mutual_infos)
                 toplot = mutual_info[:, 2:end]
-                push!(hmaps, heatmap(toplot, xticks=collect(1:L), xlabel="Distance (sites)", ylabel="Time", title="Mutual Information: " * label, clims=(0, 1)))
+                push!(hmaps, heatmap(toplot, xticks=collect(1:L), xlabel="Distance (sites)", ylabel="Time", title="MI: " * label, clims=(0, 1)))
             end
         end
     end
@@ -102,7 +102,7 @@ p1 = hline!(p1, [saturation_value(L)], label="saturation value", color="red")
 
 # make superplots
 bigplot1 = plot(p1, p2, p3, p4, layout=Plots.grid(2, 2, widths=[1 / 2, 1 / 2]), size=(1250, 1000))
-bigplot2 = plot(hmaps..., layout=Plots.grid(4, 3, widths=[1 / 3, 1 / 3, 1 / 3]), size=(2000, 1500))
+bigplot2 = plot(hmaps..., layout=Plots.grid(4, 4, widths=[1 / 4, 1 / 4, 1 / 4, 1 / 4]), size=(2000, 1500))
 
 # Performance
 benchmarkpath = joinpath(datapath, "performance_L$L.csv")
@@ -131,6 +131,6 @@ ylabel!("Time")
 bigplot3 = plot(perf1, perf2, layout=Plots.grid(1, 2, widths=[1 / 2, 1 / 2]), size=(1250, 1000))
 
 ## SAVING INFO ## 
-# savefig(bigplot1, "entanglement_$(L)L.png")
-# savefig(bigplot2, "mutual_info_$(L)L.png")
-# savefig(bigplot3, "performance_$(L)L.png")
+# savefig(bigplot1, joinpath(@__DIR__, "figures", "entanglement_$(L)L.png"))
+# savefig(bigplot2, joinpath(@__DIR__, "figures", "mutual_info_$(L)L.png"))
+# savefig(bigplot3, joinpath(@__DIR__, "figures", "performance_$(L)L.png"))
