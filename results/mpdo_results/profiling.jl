@@ -23,8 +23,8 @@ replica = 1;
 ## SAVING INFO ## 
 stamp = "results_$(L)L_$(ε)ε_$(χ)max_outer_dim_$(κ)max_inner_dim_$(replica)replica.h5"
 datapath = joinpath(@__DIR__, "data_profile")
-scratchpath = joinpath("\$SCRATCH", "noisyRQCs")
-tensorspath = joinpath("\$SCRATCH", "noisyRQCs")
+scratchpath = joinpath("/scratch/users/nticea", "noisyRQCs")
+tensorspath = joinpath("/scratch/users/nticea", "noisyRQCs")
 mkpath(datapath)
 mkpath(scratchpath)
 savepath = joinpath(datapath, stamp)

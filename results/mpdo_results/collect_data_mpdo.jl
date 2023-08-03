@@ -15,7 +15,7 @@ L, T, χ, κ, replica = Int(L), Int(T), Int(χ), Int(κ), Int(replica)
 stamp = "results_$(L)L_$(ε)ε_$(χ)max_outer_dim_$(κ)max_inner_dim_$(replica)replica.h5"
 
 datapath = joinpath(@__DIR__, "data")
-scratchpath = joinpath("\$SCRATCH", "noisyRQCs")
+scratchpath = joinpath("/scratch/users/nticea", "noisyRQCs")
 tensorspath = joinpath(scratchpath, "folder_$(L)L_$(ε)noise_$(χ)max_outer_dim_$(κ)max_inner_dim_$(replica)replica")
 mkpath(datapath)
 mkpath(scratchpath)
