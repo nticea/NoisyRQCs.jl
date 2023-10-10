@@ -145,7 +145,6 @@ function runtruncationapprox(params::TruncParams)::TruncResults
     allsites = siteinds("Qubit", nallsites)
     psi = randomMPS(ComplexF64, allsites, linkdims=bonddim)
     fullrho = density_matrix(psi)
-    fullrho /= tr(fullrho) # normalize density
 
     # Reduce outside sites, keeping only nsites
     siterange = centerrange(nallsites, nsites)
@@ -164,14 +163,18 @@ function runtruncationapprox(params::TruncParams)::TruncResults
     initdimstrunc = NDTensors.dim.(linkstotrunc)
     # truncate() orthogonalizes the MPO, but that is ok because we completely contract the
     # MPOs before running optimization
-    trunc = truncate(rhoslice; maxdim=truncatedbonddim, site_range=truncrange)
+    truncslice = truncate(rhoslice; maxdim=truncatedbonddim, site_range=truncrange)
 
     # Find approximate quantum channel
-    K, optloss, initloss = approxquantumchannel(rhoslice, trunc; nkraus)
+    K, optloss, initloss = approxquantumchannel(rhoslice, truncslice; nkraus)
+
+    # Combine truncated slices with the remainder of the MPS
+    truncrho = copy(rho)
+    truncrho[krausrange] = truncslice
 
     return TruncResults(;
-        rho=rhoslice,
-        truncrho=trunc,
+        rho,
+        truncrho,
         K,
         kraussites,
         initloss,

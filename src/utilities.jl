@@ -293,11 +293,11 @@ physical_indices(ψ::MPS, idxlist::Vector{Int}, tag::String)
     return a list of the corresponding PHYSICAL Index (struct) of the MPS
 """
 function physical_indices(ψ::Union{MPS,MPO}, sitelist::Vector{Int}; tag::String="Site")
-    [getfirst(x -> hastags(x, tag), inds(ψ[s])) for s in sitelist]
+    [noprime(getfirst(x -> hastags(x, tag), inds(ψ[s]))) for s in sitelist]
 end
 
 function physical_indices(ψ::Union{MPS,MPO}; tag::String="Site")
-    [getfirst(x -> hastags(x, tag), inds(ψs)) for ψs in ψ]
+    [noprime(getfirst(x -> hastags(x, tag), inds(ψs))) for ψs in ψ]
 end
 
 function link_indices(ψ::Union{MPS,MPO}; tag::String="Link")

@@ -110,7 +110,7 @@ function plot_paulidecomp(pdnorms; zerolims=false, title="Pauli Decomposition", 
             framestyle=:none,
         )
         ann = [(j, i, text(labels[i, j], :white, :center, 8)) for i in 1:ndimens for j in 1:ndimens]
-        p = annotate!(p, ann, linecolor=:white, yflip=true)
+        p = annotate!(p, w, linecolor=:white, yflip=true)
         push!(ps, p)
     end
 

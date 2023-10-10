@@ -22,12 +22,11 @@ rhos = density_matrix.(psis)
 
 # 2. Make truncated density matrix
 truncatedbonddim = 1
-trhos = copy.(rhos)
-[NDTensors.truncate!(trho, maxdim=truncatedbonddim) for trho in trhos]
+trhos = truncate.(rho; maxdim=Ref(truncatedbonddim))
 
 # 3. Find approximate quantum channel
-ρ = cat(Matrix.(rhos)..., dims=3)
-ρ̃ = cat(Matrix.(trhos)..., dims=3)
+ρ = cat(toarray.(rhos, Ref(sites),  Ref(sites'))..., dims=3)
+ρ̃ = cat(toarray.(trhos, Ref(sites),  Ref(sites'))..., dims=3)
 Ks, optloss, initloss, iterdata, model = approxquantumchannel(ρ, ρ̃)
 
 @show Ks

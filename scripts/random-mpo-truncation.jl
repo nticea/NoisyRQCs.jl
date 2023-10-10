@@ -39,7 +39,7 @@ end
 
 # Compute truncation channels
 channelparams = TruncParams(;
-    nsites=2,
+    nsites=4,
     nsitesreduce=0,
     bonddim=100,
     nkraussites=2,
@@ -47,13 +47,13 @@ channelparams = TruncParams(;
     truncatedbonddim=1,
     nkraus=4
 )
-ntruncsamples = 10
+ntruncsamples = 1
 results = [runtruncationapprox(channelparams) for _ in 1:ntruncsamples]
-# results = vcat(results, loadedresults) # uncomment to save previous results
+results = vcat(results, loadedresults) # uncomment to save previous results
 
 # save results
 datadir = "outputs"
-datafilename = "rand-mpo-data-2-3.jld2"
+datafilename = "rand-mpo-data-4sites.jld2"
 savefile = joinpath(@__DIR__, "..", datadir, datafilename)
 tosave = Dict("results" => results)
 save(savefile, tosave)
@@ -77,7 +77,7 @@ histogram(
 savefig(joinpath(@__DIR__, "..", datadir, "loss"))
 
 
-# run analysis
+# Analyze Kraus operators
 analyses = [analyzekraus(r.K, r.kraussites) for r in loadedresults]
 pdecomps = [a[1] for a in analyses]
 relnorms = [a[2] for a in analyses]
@@ -108,8 +108,7 @@ plot(
 )
 savefig(joinpath(@__DIR__, "..", datadir, "means"))
 
-
-# Samples
+# samples of Kraus operators
 nsamples = 3
 mininds = partialsortperm(lossratios, 1:nsamples)
 maxinds = partialsortperm(lossratios, 1:nsamples, rev=true)
@@ -128,3 +127,63 @@ plot(
     size=(2000, 1.6 * length(sampleplots) * 215)
 )
 savefig(joinpath(@__DIR__, "..", datadir, "samples"))
+
+# Density analyses
+function get_2nd_Renyi(ρ)
+    ρ_A = reduced_density_matrix(ρ, collect(1:(length(ρ)÷2)))
+    return real(second_Renyi_entropy(ρ_A))
+end
+
+function operator_entropies(ρ)
+    Ψ = combine_indices(ρ)
+    SvNs = Array{Float64}([])
+    for b in 2:(length(ρ)-2)
+        push!(SvNs, entanglement_entropy(Ψ, b=b))
+    end
+    return SvNs
+end
+
+function mutual_infos(ρ)
+    MIs = Array{Float64}([])
+    for B in collect(2:length(ρ))
+        ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, 1, B)
+        push!(MIs, mutual_information(ρA, ρB, ρAB))
+    end
+    return MIs
+end
+
+# TODO: fix
+@with_kw struct Entropies
+    trace::Float64
+    secondrenyi::Float64
+    operatorentropies::Vector{Float64}
+    logneg::Float64
+    mutualinfo::Float64
+end
+@with_kw struct Entropiess
+    trace::Float64
+    secondrenyi::Float64
+    operatorentropies::Vector{Float64}
+    logneg::Float64
+    mutualinfo::Vector{Float64}
+end
+
+# Run all analyses on a density
+getentropies(ρ) = Entropiess(;
+    trace=real(tr(ρ)),
+    secondrenyi=get_2nd_Renyi(ρ),
+    operatorentropies=operator_entropies(ρ),
+    logneg=logarithmic_negativity(ρ, collect(1:(length(ρ)÷2))),
+    mutualinfo=mutual_infos(ρ)
+)
+
+# Analyze densities before and after truncation and approximating channel
+function analyze_densities(result::TruncResults)
+    @unpack rho, truncrho, K, kraussites = result
+    # compute density after applying quantum channel
+    channelrho = apply(K, rho, apply_dag=true)
+
+    densities = [rho, truncrho, channelrho]
+    return getentropies.(densities)
+end
+density_analyses = analyze_densities(results[1])
