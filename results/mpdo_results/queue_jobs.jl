@@ -4,7 +4,7 @@ Pkg.activate(joinpath(@__DIR__, "../../"))
 include("../../src/submit_job.jl")
 
 nreps = 5 # number of replicas 
-L = 19
+L = 5
 T = 20
 ε = 1e-3
 χs = [512] # outer bond dimension

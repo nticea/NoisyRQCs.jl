@@ -5,7 +5,6 @@ using StatsBase
 using Profile
 
 include("utilities.jl")
-include("approxchannel.jl")
 include("results.jl")
 
 """
