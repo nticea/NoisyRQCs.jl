@@ -8,8 +8,8 @@ L = 5
 T = 20
 ε = 1e-3
 χs = [512] # outer bond dimension
-κs = [1, 2, 4, 8] # inner bond dimension. Set κ=0 → exact simulation of MPO
-user = ARGS[1] ? ARGS[1] : "nticea"
+κs = [1, 2, 3, 4] # inner bond dimension. Set κ=0 → exact simulation of MPO
+user = isempty(ARGS) ? "nticea" : ARGS[1]
 
 filepath_MPO = joinpath(@__DIR__, "collect_data_mpo.jl")
 filepath_MPDO = joinpath(@__DIR__, "collect_data_mpdo.jl")
