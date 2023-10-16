@@ -6,7 +6,7 @@ include("utilities.jl")
 include("results.jl")
 
 """
-Some notes about MPDOs from https://arxiv.org/pdf/1804.09796.pdf 
+Some notes about MPDOs from https://arxiv.org/pdf/1804.09796.pdf
     - Do not conserve positivity. Checking for positivity is an NP-hard problem
     - Alternative approaches: quantum trajectories and locally purified tensor networks (LPTNs)
 
@@ -23,27 +23,27 @@ function MPDO(ψ::MPS)
 end
 
 function density_matrix_mpdo(ψ::MPS)
-    # create a new density matrix MPO 
+    # create a new density matrix MPO
     sites = physical_indices(ψ)
     ρ = randomMPO(sites)
     orthogonalize!(ρ, 1)
     orthogonalize!(ψ, 1)
 
-    # make the combiners 
+    # make the combiners
     Cinds = []
     for n in 1:length(ψ)-1
         link_ind = taginds(ψ[n], "Link,l=$(n)")
         push!(Cinds, combiner(link_ind, prime(link_ind), tags="Link,l=$(n)"))
     end
 
-    # Iterate through all the sites and construct the corresponding density matrix matrices 
+    # Iterate through all the sites and construct the corresponding density matrix matrices
     for n in 1:length(ψ)
         A = ψ[n]
         Adag = dag(prime(A, sites[n]))
         rind = taginds(A, "Link,l=$(n)")
         lind = taginds(A, "Link,l=$(n-1)")
 
-        # make combiners 
+        # make combiners
         if length(rind) > 0
             Rind = Cinds[n] #combiner(rind, prime(rind), tags="Link,l=$(n)")
             Adag = prime(Adag, rind)
@@ -56,7 +56,7 @@ function density_matrix_mpdo(ψ::MPS)
         # Multiply A with A*
         AAdag = A * Adag
 
-        # Apply combiner 
+        # Apply combiner
         if length(rind) > 0
             AAdag = AAdag * Rind
         end
@@ -83,10 +83,10 @@ function make_kraus_operator(s, ε::Real)
         -1.0im 0.0]
     σz = sqrt(ε / 3) * [1.0 0.0
         0.0 -1.0]
-    # Stack them together 
+    # Stack them together
     K_elems = [Id, σx, σy, σz]
 
-    # Make the ITensor object 
+    # Make the ITensor object
     Ks = []
     for i in 1:length(K_elems)
         push!(Ks, ITensor(K_elems[i], s, prime(s)))
@@ -120,7 +120,7 @@ function apply_noise_mpdo(ψ::MPS, Ks; inner_dim::Union{Int,Nothing}=2)
             T̃, inneridx2 = directsum(T̃ => inneridx2, TKi => inneridx1, tags="Inner,n=$(j)")
         end
 
-        # Perform SVD on inner index 
+        # Perform SVD on inner index
         U, S, V = ITensors.svd(T̃, uniqueinds(T̃, inneridx2), maxdim=inner_dim, righttags="Inner,n=$(j)")
         ψ̃[j] = U * S
     end
@@ -128,18 +128,31 @@ function apply_noise_mpdo(ψ::MPS, Ks; inner_dim::Union{Int,Nothing}=2)
     return ψ̃
 end
 
+function build_mpdo(ψ::MPS)
+    # Take the input state and add a dummy index (for now just dim=1)
+    mpdo = Array{ITensor}(undef, length(ψ))
+    for m in eachindex(ψ)
+        M = ψ[m]
+        new_inds = [inds(M)..., Index(1, "Inner,n=$(m)")]
+        new_arr = reshape(array(M), size(M)..., 1)
+        mpdo[m] = ITensor(new_arr, new_inds)
+    end
+    return MPS(mpdo)
+end
+
+
 function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::Union{String,Nothing}=nothing, tensors_path::Union{String,Nothing}=nothing, random_type::String="Haar", benchmark::Bool=false, normalize_ρ::Bool=false)
 
     # extract the results from the checkpointed path
     results = load_results(checkpoint_path, load_MPS=true)
     ψ, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs = splat_struct(results)
-    T0 = findfirst(x -> x == 0, trace) # this is how far we've simulated already 
+    T0 = findfirst(x -> x == 0, trace) # this is how far we've simulated already
 
-    # prepare the noise gates 
+    # prepare the noise gates
     sites = siteinds(ψ)
     Ks = make_kraus_operators(sites, ε)
 
-    # if we've already evolved this wavefunction all the way through, do nothing 
+    # if we've already evolved this wavefunction all the way through, do nothing
     if isnothing(T0)
         return ψ, state_entanglement, operator_entanglement, lognegs, MIs, trace
     end
@@ -149,9 +162,9 @@ function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::U
         print(t, "-")
         flush(stdout)
 
-        # benchmarking 
+        # benchmarking
         if benchmark
-            # Convert MPDO into density matrix 
+            # Convert MPDO into density matrix
             ρ = density_matrix_mpdo(ψ)
 
             # trace
@@ -177,37 +190,37 @@ function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::U
             # Compute the logarithmic negativity
             lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
 
-            # mutual information 
+            # mutual information
             A = 1
             for B in collect(2:L)
                 ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
 
-                # Compute the mutual information 
+                # Compute the mutual information
                 MIs[t, B] = mutual_information(ρA, ρB, ρAB)
             end
 
-            # update the results 
+            # update the results
             if !isnothing(save_path)
                 results = Results(0, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
                 save_structs(results, save_path)
             end
 
         else
-            # still need to keep track of the trace 
+            # still need to keep track of the trace
             trace[t] = real(tr(ρ))
             @show trace[t], maxlinkdim(ρ)
         end
 
         ## Apply a layer of unitary evolution to the MPS ##
 
-        # At each time point, make a layer of random unitary gates 
+        # At each time point, make a layer of random unitary gates
         unitary_gates = unitary_layer(sites, t, random_type)
 
         for u in unitary_gates
             ψ = apply_twosite_gate(ψ, u, maxdim=maxdim)
         end
 
-        # Apply the noise layer 
+        # Apply the noise layer
         ψ = apply_noise_mpdo(ψ, Ks, inner_dim=max_inner_dim)
 
         # save results
@@ -237,12 +250,12 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         return apply_circuit_mpdo_checkpointed(checkpoint_path=checkpoint_path, save_path=save_path, tensors_path=tensors_path, random_type=random_type, benchmark=benchmark, normalize_ρ=normalize_ρ)
     end
 
-    # Housekeeping 
+    # Housekeeping
     L = length(ψ)
     sites = siteinds(ψ)
     if isnothing(maxdim)
         println("No truncation")
-        maxdim = 2^((L - 1) / 2) # accounts for the fact that the MPDO bonds are doubled relative to the MPS bonds  
+        maxdim = 2^((L - 1) / 2) # accounts for the fact that the MPDO bonds are doubled relative to the MPS bonds
     else
         println("Truncating at m=$(maxdim)")
         if !isnothing(max_inner_dim)
@@ -250,10 +263,10 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         end
     end
 
-    # Make the noise gates for this layer 
+    # Make the noise gates for this layer
     Ks = make_kraus_operators(sites, ε)
 
-    # For benchmarking 
+    # For benchmarking
     state_entanglement = zeros(Float64, T)
     operator_entanglement = zeros(Float64, T, L - 3)
     trace = zeros(Float64, T)
@@ -261,7 +274,7 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
     MIs = zeros(Float64, T, L)
 
     ## Transform ψ into an MPDO ##
-    # Take the input state and add a dummy index (for now just dim=1) 
+    # Take the input state and add a dummy index (for now just dim=1)
     for m in 1:length(ψ)
         M = ψ[m]
         new_inds = [inds(M)..., Index(1, "Inner,n=$(m)")]
@@ -274,9 +287,9 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
         print(t, "-")
         flush(stdout)
 
-        # benchmarking 
+        # benchmarking
         if benchmark
-            # Convert MPDO into density matrix 
+            # Convert MPDO into density matrix
             println("Making density matrix")
             @time ρ = density_matrix_mpdo(ψ)
 
@@ -314,31 +327,31 @@ function apply_circuit_mpdo(ψ::MPS, T::Int; maxdim::Union{Nothing,Int}=nothing,
             println("Calculating logarithmic negativity")
             @time lognegs[t] = logarithmic_negativity(ρ, collect(1:floor(Int, L / 2)))
 
-            # mutual information 
+            # mutual information
             A = 1
             for B in collect(2:L)
                 println("Making reduced density matrix with sites $A, $B")
                 @time ρA, ρB, ρAB = twosite_reduced_density_matrix(ρ, A, B)
 
-                # Compute the mutual information 
+                # Compute the mutual information
                 println("Computing MI of sites $A, $B")
                 MIs[t, B] = mutual_information(ρA, ρB, ρAB)
             end
 
-            # update the results 
+            # update the results
             if !isnothing(save_path)
                 results = Results(0, L, T, ε, maxdim, max_inner_dim, state_entanglement, operator_entanglement, trace, lognegs, MIs)
                 save_structs(results, save_path)
             end
 
         else
-            # still need to keep track of the trace somehow 
+            # still need to keep track of the trace somehow
             trace[t] = -1
         end
 
         ## Apply a layer of unitary evolution to the MPS ##
 
-        # At each time point, make a layer of random unitary gates 
+        # At each time point, make a layer of random unitary gates
         unitary_gates = unitary_layer(sites, t, random_type)
 
         for u in unitary_gates

@@ -29,3 +29,5 @@ docs/site/
 *.jld2
 *.h5
 *.csv
+
+.DS_Store

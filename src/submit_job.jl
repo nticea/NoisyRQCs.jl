@@ -5,6 +5,7 @@ struct RunParams
     χ::Int
     κ::Int
     replica::Int
+    scratch_user::String
 end
 
 function submit_job(params::RunParams, filepath, dirpath, job_prefix; nodes=1, ntasks=1, cpus_per_task=8, mem=256, partition="owners,simes")
@@ -24,7 +25,7 @@ function submit_job(params::RunParams, filepath, dirpath, job_prefix; nodes=1, n
     #SBATCH --cpus-per-task=$cpus_per_task
     #SBATCH --mem=$(mem)G
     #SBATCH --mail-type=BEGIN,FAIL,END
-    #SBATCH --mail-user=nticea@stanford.edu
+    #SBATCH --mail-user=$(params.scratch_user)@stanford.edu
     #SBATCH --output=$outpath/$(job_prefix*"_"*name)_output.txt
     #SBATCH --error=$outpath/$(job_prefix*"_"*name)_error.txt
     #SBATCH --open-mode=append
@@ -35,7 +36,7 @@ function submit_job(params::RunParams, filepath, dirpath, job_prefix; nodes=1, n
     # NO MULTITHREADING!
 
     # run the script
-    julia $filepath $(params.L) $(params.T) $(params.ε) $(params.χ) $(params.κ) $(params.replica)"""
+    julia $filepath $(params.L) $(params.T) $(params.ε) $(params.χ) $(params.κ) $(params.replica) $(params.scratch_user)"""
 
     open("$slurmpath/$(name).slurm", "w") do io
         write(io, filestr)
