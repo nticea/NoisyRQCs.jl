@@ -41,7 +41,7 @@ end
 args = parse_args(ARGS, s)
 
 # Build path at which to save large data files
-savedir = args["local"] ? joinpath(@__DIR__, "..", "data") : joinpath("scratch", "users", args["user"], "noisyRQCs")
+savedir = args["local"] ? joinpath(@__DIR__, "..", "data") : joinpath("/scratch", "users", args["user"], "noisyRQCs")
 
 # Run evolution
 L, T, ε, χ, κ = args["L"], args["T"], args["ε"], args["χ"], args["κ"]

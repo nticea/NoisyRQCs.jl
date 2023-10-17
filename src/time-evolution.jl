@@ -33,6 +33,8 @@ function evolve_state(L::Int, T::Int, ε::Float64, χ::Int, κ::Int, savedir::St
     evolve_state(state, t, T, ε, χ, κ, statedir, save_increment=save_increment)
 end
 
+STATE_FILE_PREFIX = "state_t"
+
 function evolve_state(state, t::Int, T::Int, ε::Float64, χ::Int, κ::Int, savedir::String; save_increment::Int=1)
     while t < T
         t += 1
@@ -41,7 +43,7 @@ function evolve_state(state, t::Int, T::Int, ε::Float64, χ::Int, κ::Int, save
 
         # Save state every save_increment time steps
         if (mod1(t, save_increment) == 1) || (t == T) # save last state as well
-            filename = "state_t$(t)"
+            filename = "$(STATE_FILE_PREFIX)$(t)"
             save_state(savedir, filename, state)
         end
     end
@@ -89,7 +91,8 @@ end
 
 function get_state_file_t(filepath::String)
     filename_without_ext, _ = splitext(basename(filepath))
-    return parse(Int, filename_without_ext[end])
+    t_str = split(filename_without_ext, STATE_FILE_PREFIX)[end]
+    return parse(Int, t_str)
 end
 
 function get_latest_state_filename(dir::String)::Tuple{String,Int}
