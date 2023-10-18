@@ -41,15 +41,6 @@ end
 
 ## Metrics
 
-function tr(A::MPDO)
-    L = ITensor(1.0)
-    for t in A
-        # prime the outer tags so that they are not contracted
-        L *= t * prime(dag(t), tags=OUTER_TAG)
-    end
-    return L
-end
-
 function logarithmic_negativity(A::MPDO)
     # TODO
 end
@@ -63,12 +54,16 @@ const σz = [1.0 0.0
     0.0 -1.0]
 const paulis = [Id, σx, σy, σz]
 
-function trace_right(L, state, range::UnitRange)
+function trace_right(L::ITensor, state::MPDO, range::UnitRange)
     for i in range
         # prime the outer tags so that they are not contracted
         L *= state[i] * prime(dag(state[i]), tags=OUTER_TAG)
     end
     return L
+end
+
+function tr(A::MPDO)
+    return scalar(trace_right(ITensor(1.0), A, 1:length(A)))
 end
 
 function twosite_tomography(state::MPDO, leftsite::Int, rightsite::Int, leftpauli::ITensor, rightpauli::ITensor)
