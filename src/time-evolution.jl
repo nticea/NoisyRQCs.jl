@@ -27,7 +27,7 @@ function evolve_state(L::Int, T::Int, ε::Float64, χ::Int, κ::Int, savedir::St
         # Build new state and start evolution
         println("Building initial state...")
         state_mps = initialize_wavefunction(L=L)
-        state = build_mpdo(state_mps)
+        state = MPDO(state_mps)
         t = 0
     end
     evolve_state(state, t, T, ε, χ, κ, statedir, save_increment=save_increment)

@@ -356,12 +356,12 @@ function checkpointed(path::Union{String,Nothing})
         return false
     end
 
-    # check if the file exists 
+    # check if the file exists
     if !isfile(path)
         return false
     end
 
-    # else, try to load the ITensor 
+    # else, try to load the ITensor
     res = load_results(path) # this is without ρ or ψ
     try
         if res.max_inner_dim == 0
