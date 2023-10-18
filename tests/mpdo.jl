@@ -9,7 +9,7 @@ include("../src/utilities.jl")
     @testset "trace of pure state is 1" begin
         mps = initialize_wavefunction(L=3)
         mpdo = MPDO(mps)
-        @test scalar(tr(mpdo)) == 1.0
+        @test tr(mpdo) == 1.0
     end
 
     @testset "reduced density of product state" begin
@@ -25,7 +25,7 @@ include("../src/utilities.jl")
     @testset "reduced density of bell state" begin
         # Build bell state
         site1, site2 = siteinds("Qubit", 2)
-        bell = ITensor(ComplexF64, sites)
+        bell = ITensor(ComplexF64, [site1, site2])
         bell[site1=>1, site2=>1] = 1.0
         bell[site1=>2, site2=>2] = 1.0
         bell *= 1 / √2
