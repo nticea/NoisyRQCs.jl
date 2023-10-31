@@ -31,3 +31,5 @@ docs/site/
 *.csv
 
 .DS_Store
+
+slurm/

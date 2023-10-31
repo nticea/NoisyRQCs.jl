@@ -39,11 +39,16 @@ function MPDO(ψ::MPS)
     return MPDO(mpdo)
 end
 
-## Metrics
 
-function logarithmic_negativity(A::MPDO)
-    # TODO
+function ITensors.siteind(state::MPDO, i::Int)
+    return getfirst(i -> hastags(i, SITE_TAG), inds(state[i]))
 end
+
+function innerind(state::MPDO, i::Int)
+    return getfirst(i -> hastags(i, INNER_TAG), inds(state[i]))
+end
+
+## Metrics
 
 const Id = Matrix(I, 2, 2)
 const σx = [0.0 1.0
@@ -63,39 +68,39 @@ function trace_right(L::ITensor, state::MPDO, range::UnitRange)
 end
 
 function tr(A::MPDO)
-    return scalar(trace_right(ITensor(1.0), A, 1:length(A)))
+    return real(scalar(trace_right(ITensor(1.0), A, 1:length(A))))
 end
 
-function twosite_tomography(state::MPDO, leftsite::Int, rightsite::Int, leftpauli::ITensor, rightpauli::ITensor)
-    # L will be the contracted left side of the tensor network. It will have at most two
-    # free indices: the primed and unprimed link indices to the next site to the right.
-    L = ITensor(1.0)
-    # Trace out tensors left of site A
-    L = trace_right(L, state, 1:(leftsite-1))
-
+"""
+Given a slice of a MPDO, and contracted sites to the left and right of the slice, and two
+pauli opertators, compute trace.
+"""
+function twosite_pauli_trace(L::ITensor, state::Vector{<:ITensor}, R::ITensor, leftpauli::ITensor, rightpauli::ITensor)
     # Contract pauli with tensor and adjoint
-    L *= leftpauli * prime(state[leftsite], tags=INNER_TAG) * prime(dag(state[leftsite]))
+    L *= leftpauli * prime(state[1], tags=INNER_TAG) * prime(dag(state[1]))
 
     # Continue tracing out sites between the left and right sites
-    L = trace_right(L, state, (leftsite+1):(rightsite-1))
+    for T in state[2:end-1]
+        L *= T * prime(dag(T), tags=OUTER_TAG)
+    end
 
     # Contract pauli with tensor and adjoint
-    L *= rightpauli * prime(state[rightsite], tags=INNER_TAG) * prime(dag(state[rightsite]))
+    L *= rightpauli * prime(state[end], tags=INNER_TAG) * prime(dag(state[end]))
 
-    # Continue tracing out sites between the left and right sites
-    L = trace_right(L, state, (rightsite+1):length(state))
+    # Finish by contracting the the traced out right tensor
+    L *= R
 
     return (1 / 2^2) * scalar(L)
 end
 
-
-function twosite_reduced_density(state::MPDO, site1::Int, site2::Int)
-    # Ensure left site < right site
-    lsite, rsite = sort([site1, site2])
-
+"""
+Compute reduced density using two-site tomography. This may be more memory efficient than
+using simple contraction.
+"""
+function twosite_tomography(L::ITensor, state::Vector{<:ITensor}, R::ITensor)
     # Find site indices
-    lind = siteind(first, state, lsite)
-    rind = siteind(first, state, rsite)
+    lind = getfirst(i -> hastags(i, SITE_TAG), inds(state[1]))
+    rind = getfirst(i -> hastags(i, SITE_TAG), inds(state[end]))
 
     # Build pauli basis
     leftpaulis = [ITensor(σᵢ, lind', lind) for σᵢ in paulis]
@@ -104,7 +109,7 @@ function twosite_reduced_density(state::MPDO, site1::Int, site2::Int)
     basis = Base.splat(*).(paulipairs)
 
     # Apply each pair of paulis to perform tomography
-    apply_tom(paulipair) = twosite_tomography(state, lsite, rsite, paulipair...)
+    apply_tom(paulipair) = twosite_pauli_trace(L, state, R, paulipair...)
     weights = apply_tom.(paulipairs)
 
     # Build reduced density
@@ -112,6 +117,86 @@ function twosite_reduced_density(state::MPDO, site1::Int, site2::Int)
     # Swap primes on site indices to recover original prime order
     return swapprime(ρ, 0, 1)
 end
+
+"""
+Compute reduced density by simply contracting from left to right, not tracing out the
+site indices of the leftmost and rightmost sites.
+"""
+function twosite_reduced_density(L::ITensor, state::Vector{<:ITensor}, R::ITensor)
+    L *= state[1] * prime(prime(dag(state[1]), tags=OUTER_TAG), tags=SITE_TAG)
+    for T in state[2:end-1]
+        L *= T * prime(dag(T), tags=OUTER_TAG)
+    end
+    L *= state[end] * prime(prime(dag(state[end]), tags=OUTER_TAG), tags=SITE_TAG)
+    return L * R
+end
+
+function twosite_reduced_density(state::MPDO, site1::Int, site2::Int; tom=false)
+    # Ensure left site < right site
+    lsite, rsite = sort([site1, site2])
+
+    # Trace and contract sites left of left site and right of right site
+    L = ITensor(1.0)
+    for T in state[1:lsite-1]
+        L *= T * prime(dag(T), tags=OUTER_TAG)
+    end
+    R = ITensor(1.0)
+    for T in state[end:-1:rsite+1]
+        R *= T * prime(dag(T), tags=OUTER_TAG)
+    end
+
+    if tom
+        return twosite_tomography(L, state[lsite:rsite], R)
+    else
+        return twosite_reduced_density(L, state[lsite:rsite], R)
+    end
+end
+
+function von_neumann_entropy(state::MPDO, i)
+    orthogonalize!(state, i)
+    # TODO: do we need to put the inner index somewhere specific?
+    U, S, V = svd(state[i], [linkind(state, i - 1), siteind(state, i)])
+    SvN = 0.0
+    for n = 1:ITensors.dim(S, 1)
+        p = S[n, n]^2
+        if p ≈ 0
+            SvN -= 0
+        else
+            SvN -= p * log2(p)
+        end
+    end
+    return SvN
+end
+
+function compute_metrics(state::MPDO)
+    # trace
+    trace = tr(state)
+
+    # state entanglement
+    mid = length(state) ÷ 2
+    mid_svn = von_neumann_entropy(state, mid)
+
+    lns = Array{Float64}(undef, length(state))
+    mis = Array{Float64}(undef, length(state))
+    i = 2 # start from the second site to avoid edge effects
+    i_idx = siteind(state, i)
+    for j in (i+1):length(state)
+        j_idx = siteind(state, j)
+        # compute two-site reduced density
+        ρij = twosite_reduced_density(state, i, j)
+
+        # logarithmic negativity
+        push!(lns, logarithmic_negativity(ρij, [i_idx]))
+
+        # mutual information
+        ρi = ρij * δ(i_idx, i_idx')
+        ρj = ρij * δ(j_idx, j_idx')
+        push!(mis, mutual_information(ρi, ρj, ρij))
+
+    end
+    return trace, mid_svn, lns, mis
+end
+
 
 
 # function density_matrix_mpdo(ψ::MPS)
@@ -163,6 +248,7 @@ end
 
 #     return ρ
 # end
+
 
 
 ## Noise layers

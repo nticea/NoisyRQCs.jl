@@ -1,3 +1,5 @@
+
+## OLD: USE submitjob INSTEAD
 struct RunParams
     L::Int
     T::Int

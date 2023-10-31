@@ -46,19 +46,29 @@ function partial_transpose(A::MPO, sites)
     return A
 end
 
-function trace_norm(ρ)
-    ρabs = copy(ρ)
-    for (i, ρ_i) in enumerate(ρ)
-        ρ_i_abs = ITensor(abs.(array(ρ_i)), inds(ρ_i)...)
-        ρabs[i] = ρ_i_abs
-    end
-    return tr(ρabs)
+function partial_transpose(ρ::ITensor, sites::Vector{<:Index})
+    primedsites = prime(sites)
+    return replaceinds(ρ, [sites..., primedsites...], [primedsites..., sites...])
+end
+
+function trace_norm(ρ::ITensor)
+    sites = filter(i -> hasplev(i, 0) & hastags(i, "Site"), inds(ρ))
+    U, S, V = ITensors.svd(ρ, sites, cutoff=0)
+    return sum(S)
+end
+
+function negativity(ρ, B)
+    # compute the partial transpose
+    ρT = partial_transpose(ρ, B)
+
+    # take the trace norm
+    return (trace_norm(ρT) - 1) / 2
 end
 
 """
 EN(ρ_AB) = log₂||ρ_AB^(T_B)||₁
 """
-function logarithmic_negativity(ρ::MPO, B::Vector{Int})
+function logarithmic_negativity(ρ, B)
     # compute the partial transpose
     ρT = partial_transpose(ρ, B)
 
@@ -66,7 +76,7 @@ function logarithmic_negativity(ρ::MPO, B::Vector{Int})
     trnorm = trace_norm(ρT)
 
     # take the logarithm
-    return log2.(trnorm)
+    return log2(trnorm)
 end
 
 function twosite_reduced_density_matrix(ρ::MPO, A::Int, B::Int)
@@ -133,14 +143,16 @@ function von_neumann_entropy(T::ITensor)
     SvN = 0.0
     for n = 1:ITensors.dim(S, 1)
         p = S[n, n]
-        if p != 0
-            SvN -= p * log(p)
+        if p ≈ 0
+            SvN -= 0
+        else
+            SvN -= p * log2(p)
         end
     end
     return SvN
 end
 
-function mutual_information(ρA::Union{ITensor,MPO}, ρB::Union{ITensor,MPO}, ρAB::Union{ITensor,MPO})
+function mutual_information(ρA, ρB, ρAB)
     SA = von_neumann_entropy(ρA)
     SB = von_neumann_entropy(ρB)
     SAB = von_neumann_entropy(ρAB)
@@ -166,7 +178,7 @@ function entanglement_entropy(ψ::MPS; b=nothing)
     for p in S
         # here, we DO want to square the singular values
         # this is because we are computing the entropy of a CUT
-        SvN -= p^2 * log(p^2)
+        SvN -= p^2 * log2(p^2)
     end
 
     return SvN

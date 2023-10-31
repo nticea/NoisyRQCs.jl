@@ -86,7 +86,7 @@ function load_state(path::String)
     file = h5open(path, "r")
     state = read(file, STATE_KEY, MPS)
     close(file)
-    return state
+    return MPDO(state)
 end
 
 function get_state_file_t(filepath::String)
