@@ -36,8 +36,8 @@ function build_sbatch(scriptpath::String, outdir::String, args::Array{String}, p
     #SBATCH --mem=$(params.memG)G
     #SBATCH --mail-type=BEGIN,FAIL,END
     #SBATCH --mail-user=$(params.user)@stanford.edu
-    #SBATCH --output=$(joinpath(outdir, "$(params.jobname)_output.txt"))
-    #SBATCH --error=$(joinpath(outdir, "$(params.jobname)_error.txt"))
+    #SBATCH --output=$(joinpath(outdir, "%x-%j-output.txt"))
+    #SBATCH --error=$(joinpath(outdir, "%x-%j-output.txt"))
     #SBATCH --open-mode=append
 
     # load Julia module
