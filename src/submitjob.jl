@@ -25,7 +25,8 @@ function submitjob(scriptpath, args, params::SbatchParams)
 end
 
 function build_sbatch(scriptpath::String, outdir::String, args::Array{String}, params::SbatchParams)
-    return """#!/bin/bash
+    return """
+    #!/bin/bash
     #SBATCH --job-name=$(params.jobname)
     #SBATCH --partition=$(params.partition)
     #SBATCH --time=$(params.time)
@@ -43,5 +44,6 @@ function build_sbatch(scriptpath::String, outdir::String, args::Array{String}, p
     ml julia
 
     # run the script
-    julia $scriptpath $(join(args, " "))"""
+    julia $scriptpath $(join(args, " ")) -j \$SLURM_JOBID
+    """
 end

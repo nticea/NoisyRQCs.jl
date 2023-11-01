@@ -15,9 +15,11 @@ s = ArgParseSettings()
 @add_arg_table! s begin
     "statepath"
     required = true
+    "--jobid", "-j"
+    required = false
 end
 args = parse_args(ARGS, s)
-statepath = args["statepath"]
+statepath, jobid = args["statepath"], args["jobid"]
 println("state path: ", statepath)
 
 # Build output path
@@ -26,7 +28,7 @@ statedir = splitpath(dirname(statepath))[end]
 dirpath = joinpath(@__DIR__, "..", "data", "$(statedir)-metrics")
 mkpath(dirpath)
 base, ext = split(basename(statepath), ".")
-metricsfilename = "$(base).csv"
+metricsfilename = "$(base)-$(jobid).csv"
 metricspath = joinpath(dirpath, metricsfilename)
 
 # Load state

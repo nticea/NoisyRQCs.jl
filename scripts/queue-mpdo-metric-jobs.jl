@@ -13,7 +13,7 @@ s = ArgParseSettings()
     action = :store_arg
     nargs = '+'
     required = true
-    "-u", "--user"
+    "--user", "-u"
     default = "rdimov"
 end
 args = parse_args(ARGS, s)
@@ -27,7 +27,7 @@ for statepath in statepaths
     params = SbatchParams(
         jobname="$statedir-$statename-metrics",
         memG=256,
-        user="rdimov",
+        user=args.user,
     )
     scriptargs = [statepath]
     submitjob(SCRIPTPATH, scriptargs, params)
