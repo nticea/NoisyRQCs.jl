@@ -25,7 +25,7 @@ for statepath in statepaths
     statedir = splitpath(dirname(statepath))[end]
     statename = split(basename(statepath), ".")[1]
     params = SbatchParams(
-        jobname="$statedir-$statename-metrics",
+        jobname="mpdo-metrics",
         memG=256,
         user=args["user"],
     )
