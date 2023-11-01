@@ -37,6 +37,8 @@ s = ArgParseSettings()
     "--inc"
     arg_type = Int
     default = 1
+    "--jobid", "-j"
+    required = false
 end
 args = parse_args(ARGS, s)
 
