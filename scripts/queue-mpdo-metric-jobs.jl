@@ -27,7 +27,7 @@ for statepath in statepaths
     params = SbatchParams(
         jobname="$statedir-$statename-metrics",
         memG=256,
-        user=args.user,
+        user=args["user"],
     )
     scriptargs = [statepath]
     submitjob(SCRIPTPATH, scriptargs, params)
