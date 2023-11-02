@@ -24,7 +24,7 @@ function submitjob(scriptpath, args, params::SbatchParams)
     run(`sbatch $sbatchfilepath`)
 end
 
-function build_sbatch(scriptpath::String, outdir::String, args::Array{Any}, params::SbatchParams)
+function build_sbatch(scriptpath::String, outdir::String, args, params::SbatchParams)
     return """
     #!/bin/bash
     #SBATCH --job-name=$(params.jobname)
