@@ -1,5 +1,6 @@
 using ITensors
 using LinearAlgebra
+using ITensors.HDF5
 
 include("circuit_elements.jl")
 include("utilities.jl")
@@ -42,6 +43,10 @@ end
 
 function ITensors.siteind(state::MPDO, i::Int)
     return getfirst(i -> hastags(i, SITE_TAG), inds(state[i]))
+end
+
+function ITensors.siteinds(state::MPDO)
+    return [siteind(state, i) for i in eachindex(state)]
 end
 
 function innerind(state::MPDO, i::Int)
@@ -198,6 +203,31 @@ function compute_metrics(state::MPDO)
 end
 
 
+function HDF5.write(parent::Union{HDF5.File,HDF5.Group}, name::AbstractString, M::MPDO)
+    g = create_group(parent, name)
+    attributes(g)["type"] = "MPDO"
+    attributes(g)["version"] = 1
+    N = length(M)
+    write(g, "length", N)
+    write(g, "rlim", M.rlim)
+    write(g, "llim", M.llim)
+    for n in 1:N
+        write(g, "MPDO[$(n)]", M[n])
+    end
+end
+
+function HDF5.read(parent::Union{HDF5.File,HDF5.Group}, name::AbstractString, ::Type{MPDO})
+    g = open_group(parent, name)
+    if read(attributes(g)["type"]) != "MPDO"
+        error("HDF5 group or file does not contain MPDO data")
+    end
+    N = read(g, "length")
+    rlim = read(g, "rlim")
+    llim = read(g, "llim")
+    v = [read(g, "MPDO[$(i)]", ITensor) for i in 1:N]
+    return MPDO(v, llim, rlim)
+end
+
 
 # function density_matrix_mpdo(ψ::MPS)
 #     # create a new density matrix MPO
@@ -301,7 +331,6 @@ function apply_noise_mpdo(ψ::MPDO, Ks; inner_dim::Union{Int,Nothing}=2)
 
     return ψ̃
 end
-
 
 # function apply_circuit_mpdo_checkpointed(; checkpoint_path::String, save_path::Union{String,Nothing}=nothing, tensors_path::Union{String,Nothing}=nothing, random_type::String="Haar", benchmark::Bool=false, normalize_ρ::Bool=false)
 

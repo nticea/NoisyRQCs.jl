@@ -26,7 +26,7 @@ end
 """
 Helper function to initialize a density matrix from a wavefunction
 """
-function density_matrix(ψ::MPS)
+function density_matrix(ψ)
     sites = physical_indices(ψ)
     #ψdag = dag(prime(ψ, sites))
     ψdag = prime(ψ, sites)
@@ -305,16 +305,16 @@ physical_indices(ψ::MPS, idxlist::Vector{Int}, tag::String)
     Given an INTEGER list of desired indices,
     return a list of the corresponding PHYSICAL Index (struct) of the MPS
 """
-function physical_indices(ψ::Union{MPS,MPO}, sitelist::Vector{Int}; tag::String="Site")
+function physical_indices(ψ, sitelist::Vector{Int}; tag::String="Site")
     [getfirst(x -> hastags(x, tag), inds(ψ[s])) for s in sitelist]
 end
 
-function physical_indices(ψ::Union{MPS,MPO}; tag::String="Site")
+function physical_indices(ψ; tag::String="Site")
     [getfirst(x -> hastags(x, tag), inds(ψs)) for ψs in ψ]
 end
 
-function link_indices(ψ::Union{MPS,MPO}; tag::String="Link")
-    taginds(T, tag)
+function link_indices(ψ; tag::String="Link")
+    taginds(ψ, tag)
 end
 
 function get_plev_inds(T::ITensor, lev::Int)

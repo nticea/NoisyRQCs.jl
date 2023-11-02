@@ -78,15 +78,15 @@ function save_state(dir::String, filename::String, state)
     path = joinpath(dir, filename_with_ext)
     println("Saving state at $(path)...")
     h5open(path, "w") do file
-        file[STATE_KEY] = state
+        write(file, STATE_KEY, state)
     end
 end
 
 function load_state(path::String)
     file = h5open(path, "r")
-    state = read(file, STATE_KEY, MPS)
+    state = read(file, STATE_KEY, MPDO)
     close(file)
-    return MPDO(state)
+    return state
 end
 
 function get_state_file_t(filepath::String)
