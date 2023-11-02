@@ -64,16 +64,22 @@ const σz = [1.0 0.0
     0.0 -1.0]
 const paulis = [Id, σx, σy, σz]
 
-function trace_right(L::ITensor, state::MPDO, range::UnitRange)
-    for i in range
-        # prime the outer tags so that they are not contracted
-        L *= state[i] * prime(dag(state[i]), tags=OUTER_TAG)
-    end
-    return L
+function LinearAlgebra.tr(state::MPDO, range)
+    return tr(ITensor(1.0), state, range)
 end
 
-function tr(A::MPDO)
-    return real(scalar(trace_right(ITensor(1.0), A, 1:length(A))))
+function LinearAlgebra.tr(curr::ITensor, state::MPDO, range)
+    for i in range
+        # contract next tensor into L one at a time to reduce intermediate size
+        curr *= state[i]
+        # prime the outer tags so that they are not contracted
+        curr *= prime(dag(state[i]), tags=OUTER_TAG)
+    end
+    return curr
+end
+
+function LinearAlgebra.tr(A::MPDO)
+    return real(scalar(tr(A, eachindex(A))))
 end
 
 """
@@ -86,7 +92,9 @@ function twosite_pauli_trace(L::ITensor, state::Vector{<:ITensor}, R::ITensor, l
 
     # Continue tracing out sites between the left and right sites
     for T in state[2:end-1]
-        L *= T * prime(dag(T), tags=OUTER_TAG)
+        # contract next tensor into L one at a time to reduce intermediate size
+        L *= T
+        L *= prime(dag(T), tags=OUTER_TAG)
     end
 
     # Contract pauli with tensor and adjoint
@@ -130,7 +138,9 @@ site indices of the leftmost and rightmost sites.
 function twosite_reduced_density(L::ITensor, state::Vector{<:ITensor}, R::ITensor)
     L *= state[1] * prime(prime(dag(state[1]), tags=OUTER_TAG), tags=SITE_TAG)
     for T in state[2:end-1]
-        L *= T * prime(dag(T), tags=OUTER_TAG)
+        # contract next tensor into L one at a time to reduce intermediate sizes
+        L *= T
+        L *= prime(dag(T), tags=OUTER_TAG)
     end
     L *= state[end] * prime(prime(dag(state[end]), tags=OUTER_TAG), tags=SITE_TAG)
     return L * R
@@ -141,14 +151,8 @@ function twosite_reduced_density(state::MPDO, site1::Int, site2::Int; tom=false)
     lsite, rsite = sort([site1, site2])
 
     # Trace and contract sites left of left site and right of right site
-    L = ITensor(1.0)
-    for T in state[1:lsite-1]
-        L *= T * prime(dag(T), tags=OUTER_TAG)
-    end
-    R = ITensor(1.0)
-    for T in state[end:-1:rsite+1]
-        R *= T * prime(dag(T), tags=OUTER_TAG)
-    end
+    L = tr(state, 1:lsite-1)
+    R = tr(state, length(state):-1:rsite+1)
 
     if tom
         return twosite_tomography(L, state[lsite:rsite], R)
