@@ -7,6 +7,7 @@
     cpuspertask::Int = 8
     memG::Int = 256
     user::String
+    requeue = false
 end
 
 function submitjob(scriptpath, args, params::SbatchParams)
@@ -30,11 +31,12 @@ function build_sbatch(scriptpath::String, outdir::String, args, params::SbatchPa
     #SBATCH --job-name=$(params.jobname)
     #SBATCH --partition=$(params.partition)
     #SBATCH --time=$(params.time)
+    $(params.requeue ? "#SBATCH --requeue" : "")
     #SBATCH --nodes=$(params.nodes)
     #SBATCH --ntasks=$(params.ntasks)
     #SBATCH --cpus-per-task=$(params.cpuspertask)
     #SBATCH --mem=$(params.memG)G
-    #SBATCH --mail-type=BEGIN,FAIL,END
+    #SBATCH --mail-type=ALL
     #SBATCH --mail-user=$(params.user)@stanford.edu
     #SBATCH --output=$(joinpath(outdir, "%x-%j-output.txt"))
     #SBATCH --error=$(joinpath(outdir, "%x-%j-output.txt"))

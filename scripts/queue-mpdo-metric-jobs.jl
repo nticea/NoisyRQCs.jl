@@ -4,7 +4,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using ArgParse
 include("../src/submitjob.jl")
 
-SCRIPTPATH = joinpath(@__DIR__, "compute_mpdo_metrics.jl")
+SCRIPTPATH = joinpath(@__DIR__, "compute-mpdo-metrics.jl")
 
 # Commandline arguments
 s = ArgParseSettings()

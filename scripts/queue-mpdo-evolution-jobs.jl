@@ -53,6 +53,7 @@ for r in 1:nreps
                 jobname="mpdo-evol",
                 memG=256,
                 user=user,
+                requeue=true
             )
             submitjob(SCRIPTPATH, scriptargs, params)
         end
