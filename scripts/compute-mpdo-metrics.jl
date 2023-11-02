@@ -17,6 +17,7 @@ s = ArgParseSettings()
     required = true
     "--jobid", "-j"
     required = false
+    default = ""
 end
 args = parse_args(ARGS, s)
 statepath, jobid = args["statepath"], args["jobid"]
