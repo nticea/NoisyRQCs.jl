@@ -88,7 +88,8 @@ pauli opertators, compute trace.
 """
 function twosite_pauli_trace(L::ITensor, state::Vector{<:ITensor}, R::ITensor, leftpauli::ITensor, rightpauli::ITensor)
     # Contract pauli with tensor and adjoint
-    L *= leftpauli * prime(state[1], tags=INNER_TAG) * prime(dag(state[1]))
+    L *= leftpauli * prime(state[1], tags=INNER_TAG)
+    L *= prime(dag(state[1]))
 
     # Continue tracing out sites between the left and right sites
     for T in state[2:end-1]
@@ -98,7 +99,8 @@ function twosite_pauli_trace(L::ITensor, state::Vector{<:ITensor}, R::ITensor, l
     end
 
     # Contract pauli with tensor and adjoint
-    L *= rightpauli * prime(state[end], tags=INNER_TAG) * prime(dag(state[end]))
+    L *= rightpauli * prime(state[end], tags=INNER_TAG)
+    L *= prime(dag(state[end]))
 
     # Finish by contracting the the traced out right tensor
     L *= R
@@ -136,13 +138,15 @@ Compute reduced density by simply contracting from left to right, not tracing ou
 site indices of the leftmost and rightmost sites.
 """
 function twosite_reduced_density(L::ITensor, state::Vector{<:ITensor}, R::ITensor)
-    L *= state[1] * prime(prime(dag(state[1]), tags=OUTER_TAG), tags=SITE_TAG)
+    L *= state[1]
+    L *= prime(prime(dag(state[1]), tags=OUTER_TAG), tags=SITE_TAG)
     for T in state[2:end-1]
         # contract next tensor into L one at a time to reduce intermediate sizes
         L *= T
         L *= prime(dag(T), tags=OUTER_TAG)
     end
-    L *= state[end] * prime(prime(dag(state[end]), tags=OUTER_TAG), tags=SITE_TAG)
+    L *= state[end]
+    L *= prime(prime(dag(state[end]), tags=OUTER_TAG), tags=SITE_TAG)
     return L * R
 end
 
