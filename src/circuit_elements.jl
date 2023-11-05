@@ -5,7 +5,6 @@ using StatsBase
 using Profile
 
 include("utilities.jl")
-include("approxchannel.jl")
 include("results.jl")
 
 """
@@ -23,7 +22,7 @@ function gen_Haar(N)
 end
 
 """
-This function makes a gate that is an ITensor object acting on the indices ind1 and ind2 
+This function makes a gate that is an ITensor object acting on the indices ind1 and ind2
 """
 function make_unitary_gate(ind1, ind2, random_type::String)
     D = ITensors.dim(ind1)
@@ -51,10 +50,10 @@ function make_kraus_gate(s, ε::Real)
     σz = sqrt(ε / 3) * [1.0 0.0
         0.0 -1.0]
 
-    # Stack them together 
+    # Stack them together
     K_elems = cat(Id, σx, σy, σz, dims=3)
 
-    # Turn this into an ITensor with the appropriate indices 
+    # Turn this into an ITensor with the appropriate indices
     sum_idx = Index(4, tags="sum")
     K = ITensor(K_elems, s, prime(s, 2), sum_idx, tags="Kraus")
     Kdag = prime(dag(K))
@@ -63,10 +62,10 @@ function make_kraus_gate(s, ε::Real)
 end
 
 """
-Make an entire layer of randomly-drawn gates. Alternate odd and even sites per time step 
+Make an entire layer of randomly-drawn gates. Alternate odd and even sites per time step
 """
 function unitary_layer(sites, t::Int, random_type::String)
-    # Alternate sites on odd and even layers 
+    # Alternate sites on odd and even layers
     if isodd(t)
         startidx = 1
         endidx = length(sites) - 1
@@ -75,7 +74,7 @@ function unitary_layer(sites, t::Int, random_type::String)
         endidx = length(sites)
     end
 
-    # Make a vector of gates to be applied at a time step t 
+    # Make a vector of gates to be applied at a time step t
     gates = ITensor[]
     for l in startidx:2:endidx
         # Draw a random unitary
@@ -87,34 +86,34 @@ function unitary_layer(sites, t::Int, random_type::String)
 end
 
 """
-Apply a quantum channel ("gate") to a density matrix 
+Apply a quantum channel ("gate") to a density matrix
 """
-function apply_twosite_gate(ρ::Union{MPO,MPS}, G::ITensor; maxdim=nothing)
+function apply_twosite_gate(ρ, G::ITensor; maxdim=nothing)
     ρ = copy(ρ)
 
-    # Extract the common indices where we will be applying the channel 
-    c = findall(x -> hascommoninds(G, ρ[x]), collect(1:length(ρ)))
+    # Extract the common indices where we will be applying the channel
+    c = findall(x -> hascommoninds(G, ρ[x]), eachindex(ρ))
     @assert length(c) == 2
     c1, c2 = c
 
-    # Orthogonalize the MPS around this site 
+    # Orthogonalize the MPS around this site
     orthogonalize!(ρ, c1)
 
-    # Apply the gate 
+    # Apply the gate
     if typeof(ρ) == ITensors.MPO
         G = G * prime(dag(G))
     end
     wf = (ρ[c1] * ρ[c2]) * G
 
-    # Lower the prime level by 1 to get back to what we originally had 
+    # Lower the prime level by 1 to get back to what we originally had
     if typeof(ρ) == ITensors.MPO
         wf = replaceprime(wf, 3 => 1)
         wf = replaceprime(wf, 2 => 0)
-    elseif typeof(ρ) == ITensors.MPS
+    else
         wf = replaceprime(wf, 2 => 0)
     end
 
-    # SVD the resulting tensor 
+    # SVD the resulting tensor
     inds3 = uniqueinds(ρ[c1], ρ[c2])
 
     if isnothing(maxdim) # If maxdim is nothing, then implement no truncation cutoff
@@ -123,7 +122,7 @@ function apply_twosite_gate(ρ::Union{MPO,MPS}, G::ITensor; maxdim=nothing)
         U, S, V = ITensors.svd(wf, inds3, maxdim=maxdim, lefttags="Link,l=$(c1)", righttags="Link,l=$(c2)")
     end
 
-    # Update the original MPO 
+    # Update the original MPO
     ρ[c1] = U
     ρ[c2] = S * V
 
@@ -131,26 +130,26 @@ function apply_twosite_gate(ρ::Union{MPO,MPS}, G::ITensor; maxdim=nothing)
 end
 
 """
-Apply a quantum channel ("gate") to a density matrix 
+Apply a quantum channel ("gate") to a density matrix
 """
 function apply_twosite_gate_multithread(ρ::Union{MPO,MPS}, G::ITensor; maxdim=nothing)
     ρ = copy(ρ)
 
-    # Extract the common indices where we will be applying the channel 
+    # Extract the common indices where we will be applying the channel
     c = findall(x -> hascommoninds(G, ρ[x]), collect(1:length(ρ)))
     @assert length(c) == 2
     c1, c2 = c
 
-    # Orthogonalize the MPS around this site <-- this is the bug!! 
+    # Orthogonalize the MPS around this site <-- this is the bug!!
     #orthogonalize!(ρ, c1)
 
-    # Apply the gate 
+    # Apply the gate
     if typeof(ρ) == ITensors.MPO
         G = G * prime(dag(G))
     end
     wf = (ρ[c1] * ρ[c2]) * G
 
-    # Lower the prime level by 1 to get back to what we originally had 
+    # Lower the prime level by 1 to get back to what we originally had
     if typeof(ρ) == ITensors.MPO
         wf = replaceprime(wf, 3 => 1)
         wf = replaceprime(wf, 2 => 0)
@@ -158,7 +157,7 @@ function apply_twosite_gate_multithread(ρ::Union{MPO,MPS}, G::ITensor; maxdim=n
         wf = replaceprime(wf, 2 => 0)
     end
 
-    # SVD the resulting tensor 
+    # SVD the resulting tensor
     inds3 = uniqueinds(ρ[c1], ρ[c2])
 
 
@@ -174,22 +173,22 @@ end
 function apply_onesite_gate(ρ::MPO, G::ITensor)
     ρ = copy(ρ)
 
-    # extract the common indices where we will be applying the channel 
+    # extract the common indices where we will be applying the channel
     c = findall(x -> hascommoninds(G, ρ[x]), collect(1:length(ρ)))
     @assert length(c) == 1
     c = c[1]
 
-    # Orthogonalize around this site 
+    # Orthogonalize around this site
     orthogonalize!(ρ, c)
 
-    # Apply the gate 
+    # Apply the gate
     wf = ρ[c] * G
 
-    # Lower the prime level by 1 to get back to what we originally had 
+    # Lower the prime level by 1 to get back to what we originally had
     wf = replaceprime(wf, 3 => 1)
     wf = replaceprime(wf, 2 => 0)
 
-    # Update the MPO 
+    # Update the MPO
     ρ[c] = wf
 
     return ρ
@@ -199,23 +198,23 @@ function apply_twosite_gate_approximate_truncation(ρ::MPO, G::ITensor, truncdim
     ρ = copy(ρ)
     L = length(ρ)
 
-    # Extract the common indices where we will be applying the channel 
+    # Extract the common indices where we will be applying the channel
     c = findall(x -> hascommoninds(G, ρ[x]), collect(1:length(ρ)))
     @assert length(c) == 2
     c1, c2 = c
 
-    # Orthogonalize the MPS around this site 
+    # Orthogonalize the MPS around this site
     orthogonalize!(ρ, c1)
 
-    # Apply the gate 
+    # Apply the gate
     G = G * prime(dag(G))
     ρ_ij = (ρ[c1] * ρ[c2]) * G
 
-    # Lower the prime level by 1 to get back to what we originally had 
+    # Lower the prime level by 1 to get back to what we originally had
     ρ_ij = replaceprime(ρ_ij, 3 => 1)
     ρ_ij = replaceprime(ρ_ij, 2 => 0)
 
-    # SVD the resulting tensor 
+    # SVD the resulting tensor
     U, S, V = ITensors.svd(ρ_ij, uniqueinds(ρ[c1], ρ[c2]), maxdim=truncdim, lefttags="Link,l=$(c1)", righttags="Link,l=$(c2)")
 
     if c1 == 1 || c2 == L
@@ -246,7 +245,7 @@ function apply_twosite_gate_approximate_truncation(ρ::MPO, G::ITensor, truncdim
         # apply the combiners
         cρ_ij = ρ_ij * cL * cX * cX1
         cρ̃_ij = ρ̃_ij * cL * cX * cX1
-        # permute the indices so that they match 
+        # permute the indices so that they match
         cρ_ij = permute(cρ_ij, iX, iX1, iL)
         cρ̃_ij = permute(cρ̃_ij, iX, iX1, iL)
 
@@ -262,9 +261,9 @@ function apply_twosite_gate_approximate_truncation(ρ::MPO, G::ITensor, truncdim
         Ks = Ks * cX * prime(cX, 2)
         Kdags = prime(dag(Ks))
 
-        # Apply the channel to the state 
+        # Apply the channel to the state
         ρ_ij_SVD = ρ_ij * Ks * delta(virtualidx, prime(virtualidx)) * Kdags
-        # Lower the prime level by 1 to get back to what we originally had 
+        # Lower the prime level by 1 to get back to what we originally had
         ρ_ij_SVD = replaceprime(ρ_ij_SVD, 3 => 1)
         ρ_ij_SVD = replaceprime(ρ_ij_SVD, 2 => 0)
 

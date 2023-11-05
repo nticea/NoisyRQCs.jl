@@ -51,7 +51,7 @@ function dephasing_noise(sites, ε::Float64)
     σx = [0.0 1.0
         1.0 0.0]
     σy = [0.0 -1.0im
-        -1.0im 0.0]
+        1.0im 0.0]
     σz = [1.0 0.0
         0.0 -1.0]
 
