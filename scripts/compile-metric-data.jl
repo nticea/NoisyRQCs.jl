@@ -23,6 +23,7 @@ datadir = joinpath(@__DIR__, "..", "data")
 
 # Get a list of all state directories inside the data directory
 statefiles = glob(joinpath("states*", "state_t*.csv"), datadir)
+println("Compiling $(length(statefiles)) data files...")
 
 # Initialize an empty DataFrame to store the combined data
 combined_filename = "combined.csv"
@@ -50,3 +51,5 @@ combined = vcat(alldfs...)
 
 # Write the combined data to a master CSV file
 CSV.write(combined_path, combined)
+
+println("Done!\n")
