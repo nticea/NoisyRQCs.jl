@@ -29,7 +29,7 @@ s = ArgParseSettings()
     required = true
     "--reps", "-r"
     arg_type = Int
-    nargs = "+"
+    nargs = '+'
     "--user", "-u"
     default = "rdimov"
 end
