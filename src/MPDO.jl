@@ -189,8 +189,8 @@ function compute_metrics(state::MPDO)
     mid = length(state) ÷ 2
     mid_svn = von_neumann_entropy(state, mid)
 
-    lns = Array{Float64}[]
-    mis = Array{Float64}[]
+    lns = []
+    mis = []
     i = 2 # start from the second site to avoid edge effects
     i_idx = siteind(state, i)
     for j in (i+1):length(state)
