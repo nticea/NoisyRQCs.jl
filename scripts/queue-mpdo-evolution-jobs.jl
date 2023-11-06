@@ -29,13 +29,13 @@ s = ArgParseSettings()
     required = true
     "--reps", "-r"
     arg_type = Int
-    default = 1
+    nargs = "+"
     "--user", "-u"
     default = "rdimov"
 end
 args = parse_args(ARGS, s)
 
-nreps = args["reps"] # number of replicas
+reps = args["reps"] # number of replicas
 L = args["L"]
 T = args["T"]
 ε = args["e"]
@@ -45,7 +45,7 @@ user = args["user"]
 
 script_path = joinpath(@__DIR__, "run-time-evolution.jl")
 
-for r in 1:nreps
+for r in reps
     for χ in χs
         for κ in κs
             scriptargs = [L, T, ε, χ, κ, r, user]
@@ -54,7 +54,7 @@ for r in 1:nreps
                 memG=256,
                 user=user,
                 requeue=true,
-                time="6:00:00"
+                time="12:00:00"
             )
             submitjob(SCRIPTPATH, scriptargs, params)
         end
