@@ -12,12 +12,15 @@ s = ArgParseSettings()
 @add_arg_table! s begin
     "-L"
     arg_type = Int
+    nargs = '+'
     required = true
     "-T"
     arg_type = Int
+    nargs = '+'
     required = true
     "-e"
     arg_type = Float64
+    nargs = '+'
     required = true
     "--chi", "-c"
     arg_type = Int
@@ -30,33 +33,30 @@ s = ArgParseSettings()
     "--reps", "-r"
     arg_type = Int
     nargs = '+'
+    required = true
     "--user", "-u"
     default = "rdimov"
 end
 args = parse_args(ARGS, s)
 
-reps = args["reps"] # number of replicas
-L = args["L"]
-T = args["T"]
-ε = args["e"]
+Ls = args["L"]
+Ts = args["T"]
+εs = args["e"]
 χs = args["chi"] # outer bond dimension
-κs = args["kappa"] # inner bond dimension. Set κ=0 → exact simulation of MPO
+κs = args["kappa"] # inner bond dimension
+rs = args["reps"] # replicas
 user = args["user"]
 
 script_path = joinpath(@__DIR__, "run-time-evolution.jl")
 
-for r in reps
-    for χ in χs
-        for κ in κs
-            scriptargs = [L, T, ε, χ, κ, r, user]
-            params = SbatchParams(
-                jobname="mpdo-evol",
-                memG=256,
-                user=user,
-                requeue=true,
-                time="12:00:00"
-            )
-            submitjob(SCRIPTPATH, scriptargs, params)
-        end
-    end
+for (L, T, ε, χ, κ, r) in Iterators.product(Ls, Ts, εs, χs, κs, rs)
+    scriptargs = [L, T, ε, χ, κ, r, user]
+    params = SbatchParams(
+        jobname="mpdo-evol",
+        memG=256,
+        user=user,
+        requeue=true,
+        time="12:00:00"
+    )
+    submitjob(SCRIPTPATH, scriptargs, params)
 end
