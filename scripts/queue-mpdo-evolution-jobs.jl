@@ -36,6 +36,9 @@ s = ArgParseSettings()
     required = true
     "--user", "-u"
     default = "rdimov"
+    "--memoryGB", "-u"
+    arg_type = Int
+    default = 256
 end
 args = parse_args(ARGS, s)
 
@@ -46,6 +49,7 @@ Ts = args["T"]
 κs = args["kappa"] # inner bond dimension
 rs = args["reps"] # replicas
 user = args["user"]
+memoryGB = args["memoryGB"]
 
 script_path = joinpath(@__DIR__, "run-time-evolution.jl")
 
@@ -53,7 +57,7 @@ for (L, T, ε, χ, κ, r) in Iterators.product(Ls, Ts, εs, χs, κs, rs)
     scriptargs = [L, T, ε, χ, κ, r, user]
     params = SbatchParams(
         jobname="mpdo-evol",
-        memG=256,
+        memG=memoryGB,
         user=user,
         requeue=true,
         time="12:00:00"
