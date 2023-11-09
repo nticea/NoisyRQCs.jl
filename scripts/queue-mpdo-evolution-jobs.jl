@@ -36,7 +36,7 @@ s = ArgParseSettings()
     required = true
     "--user", "-u"
     default = "rdimov"
-    "--memoryGB", "-u"
+    "--memoryGB", "-m"
     arg_type = Int
     default = 256
 end
