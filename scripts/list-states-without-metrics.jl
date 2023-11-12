@@ -6,10 +6,10 @@ using DataFrames
 using Glob
 using ArgParse
 
-include("../src/file-parsing.jl")
-
 s = ArgParseSettings()
 @add_arg_table! s begin
+    "-c", "--combined"
+    required = true
     "statedirs"
     nargs = '+'
     required = true
@@ -17,29 +17,20 @@ end
 args = parse_args(ARGS, s)
 statedirs = args["statedirs"]
 
+include("../src/file-parsing.jl")
 
-incompletedirs = []
+df = CSV.File(combpath) |> DataFrame
+
+#  TODO: finish
+
+nometrics = []
 for statedir in statedirs
     # Find T
     statedirname = splitpath(statedir)[end]
     stateparams = build_state_params(statedirname)
-    T = stateparams["T"]
 
-    # Find max t
     statefiles = readdir(statedir)
-    if ~isempty(statefiles)
-        maxt = maximum(get_t.(basename.(statefiles)))
-        if maxt < T
-            push!(incompletedirs, statedir)
-        end
-    end
-end
-
-if isempty(incompletedirs)
-    println("All state evolutions completed!\n")
-else
-    println("Incomplete state evolutions:\n")
-    for dir in incompletedirs
-        println(dir)
+    for statefile in statefiles
+        t = get_t(basename(statefile))
     end
 end
