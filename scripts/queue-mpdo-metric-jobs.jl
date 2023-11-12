@@ -15,22 +15,23 @@ s = ArgParseSettings()
     required = true
     "--user", "-u"
     default = "rdimov"
+    "--chunk", "-c"
+    arg_type = Int
+    default = 10
 end
 args = parse_args(ARGS, s)
 
 # Get the absolute path
 statepaths = joinpath.(Ref(pwd()), args["statepaths"])
 
-for statepath in statepaths
-    statedir = splitpath(dirname(statepath))[end]
-    statename = split(basename(statepath), ".")[1]
+for statepathschunk in Iterators.partition(statepaths, args["chunk"])
     params = SbatchParams(
         jobname="mpdo-metrics",
         memG=256,
         user=args["user"],
     )
-    scriptargs = [statepath]
+    scriptargs = statepathschunk
     submitjob(SCRIPTPATH, scriptargs, params)
 end
 
-println("Queued $(length(statepaths)) jobs!\n")
+println("Queued $(ceil(length(statepaths) / args["chunk"])) jobs!\n")
