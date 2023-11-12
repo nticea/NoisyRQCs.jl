@@ -5,18 +5,7 @@ using CSV
 using DataFrames
 using Glob
 
-function build_state_params(statedirname)
-    # match any digits and a single decimal point
-    pattern = r"(\d+(\.\d+)?)(L|T|noise|outer|inner)"
-    matches = eachmatch(pattern, statedirname)
-    return Dict(m[3] => parse(contains(m[1], ".") ? Float64 : Int, m[1]) for m in matches)
-end
-
-function get_t(statefilename)
-    pattern = r"state_t(\d+)"
-    m = match(pattern, statefilename)
-    return parse(Int, m[1])
-end
+include("../src/file-parsing.jl")
 
 # Define the path to the data directory
 datadir = joinpath(@__DIR__, "..", "data")
