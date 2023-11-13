@@ -34,4 +34,4 @@ for statepathschunk in Iterators.partition(statepaths, args["chunk"])
     submitjob(SCRIPTPATH, scriptargs, params)
 end
 
-println("Queued $(ceil(length(statepaths) / args["chunk"])) jobs!\n")
+println("Queued $(Int(ceil(length(statepaths) / args["chunk"]))) jobs!\n")
