@@ -6,7 +6,7 @@ function build_state_params(statedirname)
     params = Dict(m[3] => parse(contains(m[1], ".") ? Float64 : Int, m[1]) for m in matches)
 
     # Include the rep
-    rep = parse(Int, split(statedirname, "-")[end])
+    rep = parse(Int, split(statedirname, "-")[end-1])
     params["rep"] = rep
 
     return params
