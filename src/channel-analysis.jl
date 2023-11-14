@@ -4,6 +4,8 @@ using LinearAlgebra
 using Plots
 using Kronecker: ⊗
 
+include("paulis.jl")
+
 """
 Computed Frobenius norm of a tensor, keeping indices provided
 """
@@ -15,27 +17,6 @@ function frobneiusnorm(K, onindices...)
     return sqrt.((real(norm.(K)) .^ 2) * ITensor(1.0, indstonorm))
 end
 
-function buildpaulibasis(site)
-    Id = Matrix(I, 2, 2)
-    σx = [0.0 1.0
-        1.0 0.0]
-    σy = [0.0 -1.0im
-        1.0im 0.0]
-    σz = [1.0 0.0
-        0.0 -1.0]
-
-    paulis = [Id, σx, σy, σz]
-
-    return [ITensor(pauli, site, site') for pauli in paulis]
-end
-
-function paulibasislabels(n::Int)
-    sitelabels = [
-        [l for l in ["I", "x", "y", "z"]]
-        for _ in 1:n
-    ]
-    return [*(ops...) for ops in Iterators.product(sitelabels...)]
-end
 
 """
 Computes matrix of pauli decomposition coefficients of tensor on given indices and their primes

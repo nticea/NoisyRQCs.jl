@@ -1,7 +1,7 @@
 
 using ITensors
 
-include("channel-analysis.jl")
+include("paulis.jl")
 
 const KRAUS_TAG = "Kraus"
 
@@ -47,14 +47,7 @@ function dephasing_noise(sites, ε::Float64)
     cS = combinedind(CS) # make a new label for the combined indices
 
     # Make the kraus operators
-    Id = Matrix(I, 2, 2)
-    σx = [0.0 1.0
-        1.0 0.0]
-    σy = [0.0 -1.0im
-        1.0im 0.0]
-    σz = [1.0 0.0
-        0.0 -1.0]
-
+    # TODO: this is not correct for dephasing noise
     Ids = sqrt(1 - ε) .* copy(Id)
     σxs = sqrt(ε / 3) .* copy(σx)
     σys = sqrt(ε / 3) .* copy(σy)
@@ -81,13 +74,13 @@ end
 """
 Build depolarizing channel Kraus operator for single qubit site.
 """
-function single_site_depolarizing_noise(site, ϵ)
+function single_site_depolarizing_noise(site; ε)
     # Build pauli operators for the site: [I, σx, σy, σz]
     paulis = buildpaulibasis(site)
 
-    # Scale paulis with given ϵ
-    coeffI = sqrt(1 - 3ϵ / 4)
-    coeffx = sqrt(ϵ) / 2
+    # Scale paulis with given ε
+    coeffI = sqrt(1 - 3ε / 4)
+    coeffx = sqrt(ε) / 2
     coefs = [coeffI, coeffx, coeffx, coeffx]
     ops = coefs .* paulis
 
@@ -97,9 +90,9 @@ function single_site_depolarizing_noise(site, ϵ)
     return K
 end
 
-function depolarizing_noise(sites, ϵ)
+function depolarizing_noise(sites, ε)
     # Build depolarizing channel for each site
-    Ks = single_site_depolarizing_noise.(sites, Ref(ϵ))
+    Ks = single_site_depolarizing_noise.(sites; ε)
 
     # Make tensor product of single-site channels. Prime kraus inds to prevent contraction
     primedKs = [setprime(Ks[i], i - 1, tags=KRAUS_TAG) for i in eachindex(Ks)]

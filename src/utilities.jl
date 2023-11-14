@@ -26,13 +26,8 @@ end
 """
 Helper function to initialize a density matrix from a wavefunction
 """
-function density_matrix(ψ)
-    sites = physical_indices(ψ)
-    #ψdag = dag(prime(ψ, sites))
-    ψdag = prime(ψ, sites)
-    prime!(ψdag, "Link")
-    return outer(ψ, ψdag)
-end
+density_matrix(ψ::MPS) = outer(ψ, ψ')
+density(ψ::MPS) = density_matrix(ψ)
 
 function complement(L::Int, B::Vector{Int})
     setdiff(collect(1:L), B)

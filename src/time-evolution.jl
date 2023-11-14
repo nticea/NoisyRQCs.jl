@@ -4,12 +4,38 @@ using LinearAlgebra
 
 include("circuit_elements.jl")
 include("utilities.jl")
-include("MPDO.jl")
+include("mpdo.jl")
+include("mpo.jl")
 include("results.jl")
+include("file-parsing.jl")
+include("kraus.jl")
 
-function evolve_state(L::Int, T::Int, ε::Float64, χ::Int, κ::Int, savedir::String; tag, save_increment::Int=1)
+function typefromstr(str)::Type
+    if str == "MPS"
+        return MPS
+    elseif str == "MPO"
+        return MPO
+    elseif str == "MPDO"
+        return MPDO
+    else
+        error("Invalid state type string: $str")
+    end
+end
+
+function initstate(L)::MPS
+    @assert isodd(L) "L must be odd"
+    sites = siteinds("Qubit", L)
+    states = fill("0", L)
+    productMPS(sites, states)
+end
+
+initstate(L, ::Type{MPDO})::MPDO = MPDO(initstate(L))
+initstate(L, ::Type{MPS})::MPS = initstate(L)
+initstate(L, ::Type{MPO})::MPO = density(initstate(L))
+
+function evolve_state(L::Int, T::Int, ε::Float64, χ::Int, κ::Int, savedir::String; tag, save_increment::Int=1, type::Type)
     # Build path to directory with states
-    statedirname = build_state_dirname(L, T, ε, χ, κ, tag=tag)
+    statedirname = build_state_dirname(L, T, ε, χ, κ, type, tag=tag)
     statedir = joinpath(savedir, statedirname)
 
     # Check if any states are saved in savedir, which may not exist
@@ -19,15 +45,14 @@ function evolve_state(L::Int, T::Int, ε::Float64, χ::Int, κ::Int, savedir::St
         println("Loading saved state...")
         statefilename, t = get_latest_state_filename(statedir)
         statefile = joinpath(statedir, statefilename)
-        state = load_state(statefile)
+        state = load_state(statefile, type)
     else
         # Make a new state directory
         mkpath(statedir)
 
         # Build new state and start evolution
         println("Building initial state...")
-        state_mps = initialize_wavefunction(L=L)
-        state = MPDO(state_mps)
+        state = initstate(L, type)
         t = 0
     end
     evolve_state(state, t, T, ε, χ, κ, statedir, save_increment=save_increment)
@@ -51,26 +76,27 @@ function evolve_state(state, t::Int, T::Int, ε::Float64, χ::Int, κ::Int, save
 end
 
 function apply_timestep(state, t::Int, ε::Float64, χ::Int, κ::Int; random_type::String="Haar")
-    # prepare the noise gates
-    sites = siteinds(state)
-
     # Apply a layer of unitary gates
+    sites = siteinds(first, state)
     unitary_gates = unitary_layer(sites, t, random_type)
     for u in unitary_gates
         state = apply_twosite_gate(state, u, maxdim=χ)
     end
 
     # Apply the noise layers
-    Ks = make_kraus_operators(sites, ε)
-    return apply_noise_mpdo(state, Ks, inner_dim=κ)
+    if ε > 0
+        state = apply_depolarizing_noise(state, ε, inner_dim=κ)
+    end
+
+    return state
 end
 
 ## Saving and loading states
 
 STATE_KEY = "state"
 
-function build_state_dirname(L::Int, T::Int, ε::Float64, χ::Int, κ::Int; tag="")
-    return "states-$(L)L-$(T)T-$(ε)noise-$(χ)outer-$(κ)inner$(isempty(tag) ? "" : "-$(tag)")"
+function build_state_dirname(L::Int, T::Int, ε::Float64, χ::Int, κ::Int, type::Type; tag="")
+    return "states-$(paramstring(L, T, ε, χ, κ, type; tag))"
 end
 
 function save_state(dir::String, filename::String, state)
@@ -82,9 +108,9 @@ function save_state(dir::String, filename::String, state)
     end
 end
 
-function load_state(path::String)
+function load_state(path::String, type::Type)
     file = h5open(path, "r")
-    state = read(file, STATE_KEY, MPDO)
+    state = read(file, STATE_KEY, type)
     close(file)
     return state
 end

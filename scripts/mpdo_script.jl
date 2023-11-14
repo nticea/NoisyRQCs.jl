@@ -1,12 +1,12 @@
 ## IMPORTS ##
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
-include("../src/MPDO.jl")
+include("../src/mpdo.jl")
 include("../src/results.jl")
 
 ITensors.set_warn_order(50)
 
-## PARAMETERS ## 
+## PARAMETERS ##
 L = 9
 T = 20
 εs = [0, 1e-2, 1e-3]
@@ -51,10 +51,10 @@ function mpdo_circuit_run(; L, T, maxdim, εs, max_inner_dims, normalize_ρ::Boo
     return st_ents, op_ents, traces, lognegs, mutual_infos
 end
 
-# actually run the script 
+# actually run the script
 st_ents, op_ents, traces, lognegs, mutual_infos = mpdo_circuit_run(L=L, T=T, maxdim=maxdim, εs=εs, max_inner_dims=max_inner_dims, normalize_ρ=normalize_ρ)
 
-## PLOTTING ## 
+## PLOTTING ##
 
 global p1 = plot()
 global p2 = plot()
@@ -72,7 +72,7 @@ for (i, ε) in enumerate(εs)
         global p1 = plot!(p1, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Second Rényi Entropy of State at L/2", legend=:bottomright)
 
-        # operator entropy 
+        # operator entropy
         S = op_ents[i][j]
         mid = floor(Int, L / 2)
         if size(S)[1] != L
@@ -82,7 +82,7 @@ for (i, ε) in enumerate(εs)
         global p2 = plot!(p2, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Operator Entanglement Entropy at L/2", legend=:bottomright)
 
-        # trace 
+        # trace
         toplot = traces[i][j]
         global p3 = plot!(p3, 1:length(toplot), toplot, label="ε=$(ε), max inner dim=$(maxdim)",
             c=ε_cmap[i], ls=innerdim_ls[j], title="Trace", legend=:bottomright)
