@@ -39,6 +39,8 @@ s = ArgParseSettings()
     "--memoryGB", "-m"
     arg_type = Int
     default = 256
+    "--type", "-t"
+    default = "MPDO"
 end
 args = parse_args(ARGS, s)
 
@@ -50,11 +52,12 @@ Ts = args["T"]
 rs = args["reps"] # replicas
 user = args["user"]
 memoryGB = args["memoryGB"]
+type = args["type"]
 
 script_path = joinpath(@__DIR__, "run-time-evolution.jl")
 
 for (L, T, ε, χ, κ, r) in Iterators.product(Ls, Ts, εs, χs, κs, rs)
-    scriptargs = [L, T, ε, χ, κ, r, user]
+    scriptargs = [L, T, ε, χ, κ, r, user, type]
     params = SbatchParams(
         jobname="mpdo-evol",
         memG=memoryGB,

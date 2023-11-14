@@ -1,7 +1,7 @@
 using BenchmarkTools
 using Plots
 
-include("../src/MPDO.jl")
+include("../src/mpdo.jl")
 
 function benchmark_twosite_reduced_density(L, linkdims_range, tom)
     runtimes = []

@@ -2,7 +2,7 @@
 using Test
 using ITensors
 
-include("../src/MPDO.jl")
+include("../src/mpdo.jl")
 include("../src/utilities.jl")
 
 @testset "MPDO tests" begin

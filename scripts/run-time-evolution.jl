@@ -30,8 +30,9 @@ s = ArgParseSettings()
     arg_type = Int
     required = true
     "user"
-    arg_type = String
     required = true
+    "type"
+    default = "MPDO"
     "--local"
     action = :store_true
     "--inc"
@@ -47,11 +48,13 @@ savedir = args["local"] ? joinpath(@__DIR__, "..", "data") : joinpath("/scratch"
 
 # Run evolution
 L, T, ε, χ, κ = args["L"], args["T"], args["ε"], args["χ"], args["κ"]
-results = @timed evolve_state(L, T, ε, χ, κ, savedir; tag=args["replica"], save_increment=args["inc"])
+type = typefromstr(args["type"])
+tag = args["replica"]
+results = @timed evolve_state(L, T, ε, χ, κ, savedir; tag, save_increment=args["inc"], type)
 
 # Save perfomance stats
 println("Saving benchmarks...")
-benchmarks_filename = "benchmarks-$(L)L-$(T)T-$(ε)noise-$(χ)outer-$(κ)inner.csv"
+benchmarks_filename = "benchmarks-$(paramstring(L, T, ε, χ, κ, type, tag=tag)).csv"
 benchmarks_path = joinpath(savedir, benchmarks_filename)
 df = load_performance_dataframe(benchmarks_path)
 update_performance!(df, L=L, ε=ε, max_outer_dim=χ, max_inner_dim=κ, results=results)

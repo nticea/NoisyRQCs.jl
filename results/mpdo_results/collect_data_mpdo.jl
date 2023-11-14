@@ -1,7 +1,7 @@
 ## IMPORTS ##
 using Pkg
 Pkg.activate(joinpath(@__DIR__, "../../"))
-include("../../src/MPDO.jl")
+include("../../src/mpdo.jl")
 include("../../src/results.jl")
 
 using ArgParse

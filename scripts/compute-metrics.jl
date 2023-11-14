@@ -1,8 +1,10 @@
 ## IMPORTS ##
 using Pkg
 Pkg.activate(joinpath(@__DIR__, "../"))
-include("../src/MPDO.jl")
+include("../src/mpdo.jl")
 include("../src/time-evolution.jl")
+include("../src/file-parsing.jl")
+include("../src/entropy-metrics.jl")
 
 using ArgParse
 using DataFrames
@@ -37,7 +39,8 @@ for statepath in statepaths
 
     # Load state
     println("Loading state...")
-    state = load_state(statepath)
+    statetype = typefromstr(statetypestr(statedir))
+    state = load_state(statepath, statetype)
 
     # Compute metrics
     println("Computing metrics...")
