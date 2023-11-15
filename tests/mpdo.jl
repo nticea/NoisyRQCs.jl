@@ -75,7 +75,7 @@ end
         bell = ITensor(ComplexF64, [site1, site2])
         bell[site1=>1, site2=>1] = 1.0
         bell[site1=>2, site2=>2] = 1.0
-        bell *= 1 / √2
+        bell *= 1 / 2
 
         # Make MPS out of bell state
         U, S, V = svd(bell, site1; cutoff=0, lefttags="Link,l=1", righttags="Link,l=1")
