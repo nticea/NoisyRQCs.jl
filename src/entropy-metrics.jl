@@ -1,5 +1,38 @@
 using ITensors
 
+function partial_transpose(ρ::ITensor, sites::Vector{<:Index})
+    primedsites = prime(sites)
+    return replaceinds(ρ, [sites..., primedsites...], [primedsites..., sites...])
+end
+
+function trace_norm(ρ::ITensor)
+    sites = filter(i -> hasplev(i, 0) & hastags(i, "Site"), inds(ρ))
+    U, S, V = ITensors.svd(ρ, sites, cutoff=0)
+    return sum(S)
+end
+
+function negativity(ρ, B)
+    # compute the partial transpose
+    ρT = partial_transpose(ρ, B)
+
+    # take the trace norm
+    return (trace_norm(ρT) - 1) / 2
+end
+
+"""
+EN(ρ_AB) = log₂||ρ_AB^(T_B)||₁
+"""
+function logarithmic_negativity(ρ, B)
+    # compute the partial transpose
+    ρT = partial_transpose(ρ, B)
+
+    # take the trace norm
+    trnorm = trace_norm(ρT)
+
+    # take the logarithm
+    return log2(trnorm)
+end
+
 function compute_metrics(state)
     # TODO: is there a better way to handle MPS?
     if typeof(state) == MPS
