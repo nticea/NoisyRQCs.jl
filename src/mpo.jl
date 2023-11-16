@@ -48,5 +48,5 @@ function apply_depolarizing_noise(ψ::MPO, ε::Real; _...)
     sites = siteinds(first, ψ)
     # Multiply ε by 4/3 to agree with "make_kraus_operator"
     Ks = single_site_depolarizing_noise.(sites, ε=(4 / 3 * ε))
-    return swapprime(apply.(Ks, ψ, apply_dag=true), 0 => 1, tags="Site")
+    return apply.(Ks, ψ, apply_dag=true)
 end
